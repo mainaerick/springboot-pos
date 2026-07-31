@@ -2,10 +2,6 @@ spring:
   application:
     name: pos
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-
   profiles:
     active: dev
 
