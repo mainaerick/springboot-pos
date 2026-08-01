@@ -3,8 +3,9 @@ package com.devrick.pos.user.service;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface UserService {
 
@@ -12,7 +13,7 @@ public interface UserService {
 
     UserResponse getById(UUID id);
 
-    List<UserResponse> getAll();
+    Page<UserResponse> getAll(Pageable pageable);
 
     UserResponse update(UUID id, UpdateUserRequest request);
 

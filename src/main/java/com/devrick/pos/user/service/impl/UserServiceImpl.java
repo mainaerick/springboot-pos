@@ -9,14 +9,19 @@ import com.devrick.pos.user.entity.User;
 import com.devrick.pos.user.mapper.UserMapper;
 import com.devrick.pos.user.repository.UserRepository;
 import com.devrick.pos.user.service.UserService;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserServiceImpl implements UserService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
@@ -30,6 +35,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponse create(CreateUserRequest request) {
         String normalizedEmail = normalizeEmail(request.email());
+        log.info("Creating user with email {}", normalizedEmail);
 
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw new DuplicateEmailException(normalizedEmail);
@@ -50,8 +56,8 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponse> getAll() {
-        return userRepository.findAll().stream().map(userMapper::toResponse).toList();
+    public Page<UserResponse> getAll(Pageable pageable) {
+        return userRepository.findAll(pageable).map(userMapper::toResponse);
     }
 
     @Override
@@ -60,6 +66,7 @@ public class UserServiceImpl implements UserService {
         User user = findUserById(id);
         String normalizedEmail = normalizeEmail(request.email());
         String currentEmail = normalizeEmail(user.getEmail());
+        log.info("Updating user {}", id);
 
         if (!normalizedEmail.equals(currentEmail) && userRepository.existsByEmail(normalizedEmail)) {
             throw new DuplicateEmailException(normalizedEmail);
@@ -77,6 +84,7 @@ public class UserServiceImpl implements UserService {
     public void disable(UUID id) {
         User user = findUserById(id);
         user.setEnabled(false);
+        log.info("Disabling user {}", id);
         userRepository.save(user);
     }
 

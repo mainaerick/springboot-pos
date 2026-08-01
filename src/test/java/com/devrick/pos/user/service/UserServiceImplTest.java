@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,11 +30,14 @@ import org.mapstruct.factory.Mappers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
-    @Mock private UserRepository userRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private final UserMapper userMapper = Mappers.getMapper(UserMapper.class);
 
@@ -50,19 +52,16 @@ class UserServiceImplTest {
     void createSucceedsAndNormalizesEmail() {
         UUID id = UUID.randomUUID();
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request =
-                new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!");
+        CreateUserRequest request = new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!");
 
         when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
-        when(userRepository.save(any(User.class)))
-                .thenAnswer(
-                        invocation -> {
-                            User user = invocation.getArgument(0);
-                            setField(user, "id", id);
-                            setField(user, "createdAt", now);
-                            setField(user, "updatedAt", now);
-                            return user;
-                        });
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            setField(user, "id", id);
+            setField(user, "createdAt", now);
+            setField(user, "updatedAt", now);
+            return user;
+        });
 
         UserResponse response = userService.create(request);
 
@@ -82,8 +81,7 @@ class UserServiceImplTest {
 
     @Test
     void createDuplicateEmailThrowsDuplicateEmailException() {
-        CreateUserRequest request =
-                new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!");
+        CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!");
 
         when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(true);
 
@@ -119,8 +117,7 @@ class UserServiceImplTest {
 
         when(userRepository.findById(id)).thenReturn(Optional.empty());
 
-        UserNotFoundException exception =
-                assertThrows(UserNotFoundException.class, () -> userService.getById(id));
+        UserNotFoundException exception = assertThrows(UserNotFoundException.class, () -> userService.getById(id));
 
         assertEquals("User not found: " + id, exception.getMessage());
     }
@@ -129,33 +126,18 @@ class UserServiceImplTest {
     void getAllReturnsDtoList() {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
         User first =
-                buildUser(
-                        UUID.randomUUID(),
-                        "Jane",
-                        "Doe",
-                        "jane.doe@example.com",
-                        "Password123!",
-                        true,
-                        now,
-                        now);
-        User second =
-                buildUser(
-                        UUID.randomUUID(),
-                        "John",
-                        "Smith",
-                        "john.smith@example.com",
-                        "Password123!",
-                        false,
-                        now,
-                        now);
+                buildUser(UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
+        User second = buildUser(
+                UUID.randomUUID(), "John", "Smith", "john.smith@example.com", "Password123!", false, now, now);
 
-        when(userRepository.findAll()).thenReturn(List.of(first, second));
+        when(userRepository.findAll(PageRequest.of(0, 20)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(first, second)));
 
-        List<UserResponse> responses = userService.getAll();
+        Page<UserResponse> responses = userService.getAll(PageRequest.of(0, 20));
 
-        assertEquals(2, responses.size());
-        assertEquals("jane.doe@example.com", responses.get(0).email());
-        assertEquals("john.smith@example.com", responses.get(1).email());
+        assertEquals(2, responses.getTotalElements());
+        assertEquals("jane.doe@example.com", responses.getContent().get(0).email());
+        assertEquals("john.smith@example.com", responses.getContent().get(1).email());
     }
 
     @Test
@@ -164,18 +146,15 @@ class UserServiceImplTest {
         Instant createdAt = Instant.parse("2026-07-31T10:15:30Z");
         Instant updatedAt = Instant.parse("2026-07-31T11:15:30Z");
         User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, createdAt, createdAt);
-        UpdateUserRequest request =
-                new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
-        when(userRepository.save(any(User.class)))
-                .thenAnswer(
-                        invocation -> {
-                            User saved = invocation.getArgument(0);
-                            setField(saved, "updatedAt", updatedAt);
-                            return saved;
-                        });
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            setField(saved, "updatedAt", updatedAt);
+            return saved;
+        });
 
         UserResponse response = userService.update(id, request);
 
@@ -194,8 +173,7 @@ class UserServiceImplTest {
         UUID id = UUID.randomUUID();
         User user = buildUser(
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
-        UpdateUserRequest request =
-                new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(true);
@@ -210,7 +188,8 @@ class UserServiceImplTest {
     @Test
     void disableSetsEnabledFalse() {
         UUID id = UUID.randomUUID();
-        User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
+        User user = buildUser(
+                id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
 
@@ -223,8 +202,7 @@ class UserServiceImplTest {
     @Test
     void mapperMapsCreateRequestAndResponseFields() {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request =
-                new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!");
+        CreateUserRequest request = new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!");
         User user = buildUser(UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
 
         User mappedUser = userMapper.toEntity(request);
