@@ -31,5 +31,6 @@ public interface UserMapper {
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "deleted", ignore = true)
     @Mapping(target = "password", ignore = true)
+    @Mapping(target = "enabled", source = "enabled")
     void updateEntity(UpdateUserRequest request, @MappingTarget User user);
 }
