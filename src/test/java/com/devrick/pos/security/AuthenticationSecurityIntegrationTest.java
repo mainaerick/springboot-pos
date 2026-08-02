@@ -54,24 +54,13 @@ class AuthenticationSecurityIntegrationTest {
 
     @Test
     void loginAuthenticationAndProtectedEndpointsWorkTogether() throws Exception {
-        userRepository.saveAndFlush(createUser("john.doe@example.com", "Password123"));
+        userRepository.saveAndFlush(createUser("john.doe@example.com", "Password123", Role.ADMIN));
+        userRepository.saveAndFlush(createUser("jane.cashier@example.com", "Password123", Role.CASHIER));
 
-        String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
-                        .contentType(APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                new LoginRequest("john.doe@example.com", "Password123"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresIn").value(900))
-                .andReturn()
-                .getResponse()
-                .getContentAsString(StandardCharsets.UTF_8);
+        AuthTokens adminTokens = login("john.doe@example.com", "Password123");
+        AuthTokens cashierTokens = login("jane.cashier@example.com", "Password123");
 
-        JsonNode responseBody = objectMapper.readTree(loginResponse);
-        String accessToken = responseBody.get("accessToken").asText();
-
-        mockMvc.perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        mockMvc.perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("john.doe@example.com"))
                 .andExpect(jsonPath("$.firstName").value("John"))
@@ -79,21 +68,84 @@ class AuthenticationSecurityIntegrationTest {
 
         mockMvc.perform(get("/api/v1/users")).andExpect(status().isUnauthorized());
 
-        mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(cashierTokens.accessToken())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+
+        String refreshResponse = mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new com.devrick.pos.security.dto.RefreshTokenRequest(adminTokens.refreshToken()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.expiresIn").value(900))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+
+        JsonNode refreshBody = objectMapper.readTree(refreshResponse);
+        String refreshedAccessToken = refreshBody.get("accessToken").asText();
+
+        mockMvc.perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(refreshedAccessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("john.doe@example.com"));
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .contentType(APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                          "refreshToken": "bad.refresh.token"
+                        }
+                        """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("UNAUTHORIZED"));
 
         mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, "Bearer bad.token.here"))
                 .andExpect(status().isUnauthorized());
     }
 
-    private User createUser(String email, String rawPassword) {
+    private AuthTokens login(String email, String password) throws Exception {
+        String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(email, password))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresIn").value(900))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+
+        JsonNode responseBody = objectMapper.readTree(loginResponse);
+        return new AuthTokens(
+                responseBody.get("accessToken").asText(),
+                responseBody.get("refreshToken").asText());
+    }
+
+    private String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    private User createUser(String email, String rawPassword, Role role) {
         User user = new User();
         user.setFirstName("John");
-        user.setLastName("Doe");
+        user.setLastName(role == Role.CASHIER ? "Cashier" : "Doe");
         user.setEmail(email);
         user.setPassword(passwordEncoder.encode(rawPassword));
-        user.setRole(Role.ADMIN);
+        user.setRole(role);
         user.setEnabled(true);
         return user;
     }
+
+    private record AuthTokens(String accessToken, String refreshToken) {}
 }

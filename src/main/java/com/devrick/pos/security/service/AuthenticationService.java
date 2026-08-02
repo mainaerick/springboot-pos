@@ -2,6 +2,8 @@ package com.devrick.pos.security.service;
 
 import com.devrick.pos.security.dto.LoginRequest;
 import com.devrick.pos.security.dto.LoginResponse;
+import com.devrick.pos.security.dto.RefreshTokenRequest;
+import com.devrick.pos.security.dto.RefreshTokenResponse;
 import com.devrick.pos.security.jwt.JwtProperties;
 import com.devrick.pos.security.jwt.JwtService;
 import com.devrick.pos.user.dto.UserResponse;
@@ -12,9 +14,11 @@ import java.security.Principal;
 import java.util.Locale;
 import java.util.Optional;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,18 +33,21 @@ public class AuthenticationService {
     private final JwtProperties jwtProperties;
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final UserDetailsService userDetailsService;
 
     public AuthenticationService(
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             JwtProperties jwtProperties,
             UserRepository userRepository,
-            UserMapper userMapper) {
+            UserMapper userMapper,
+            UserDetailsService userDetailsService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
         this.userRepository = userRepository;
         this.userMapper = userMapper;
+        this.userDetailsService = userDetailsService;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -49,10 +56,35 @@ public class AuthenticationService {
 
         UserDetails principal = (UserDetails) authentication.getPrincipal();
         String accessToken = jwtService.generateAccessToken(principal);
+        String refreshToken = jwtService.generateRefreshToken(principal);
         return new LoginResponse(
                 accessToken,
+                refreshToken,
                 TOKEN_TYPE,
                 jwtProperties.getAccessTokenExpiration().toSeconds());
+    }
+
+    @Transactional(readOnly = true)
+    public RefreshTokenResponse refresh(RefreshTokenRequest request) {
+        String refreshToken = request.refreshToken().trim();
+        try {
+            String username = jwtService.extractUsername(refreshToken);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+            if (!jwtService.isRefreshTokenValid(refreshToken, userDetails)) {
+                throw new BadCredentialsException("Refresh token is invalid");
+            }
+
+            String accessToken = jwtService.generateAccessToken(userDetails);
+            return new RefreshTokenResponse(
+                    accessToken, jwtProperties.getAccessTokenExpiration().toSeconds());
+        } catch (RuntimeException exception) {
+            throw new BadCredentialsException("Refresh token is invalid", exception);
+        }
+    }
+
+    public void logout() {
+        // Stateless JWT logout is a no-op in Story 7.
     }
 
     @Transactional(readOnly = true)

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
@@ -34,7 +35,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(
             AuthenticationException exception, HttpServletRequest request) {
-        return buildResponse(HttpStatus.UNAUTHORIZED, "Authentication failed", request, null);
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                Objects.requireNonNullElse(exception.getMessage(), "Authentication failed"),
+                request,
+                null);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException(
+            AccessDeniedException exception, HttpServletRequest request) {
+        return buildResponse(
+                HttpStatus.FORBIDDEN,
+                Objects.requireNonNullElse(exception.getMessage(), "Access denied"),
+                request,
+                null);
     }
 
     @ExceptionHandler(UsernameNotFoundException.class)

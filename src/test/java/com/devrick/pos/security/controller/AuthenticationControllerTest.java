@@ -1,6 +1,7 @@
 package com.devrick.pos.security.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.devrick.pos.exception.GlobalExceptionHandler;
 import com.devrick.pos.security.dto.LoginResponse;
+import com.devrick.pos.security.dto.RefreshTokenResponse;
 import com.devrick.pos.security.service.AuthenticationService;
 import com.devrick.pos.user.dto.UserResponse;
 import java.security.Principal;
@@ -40,7 +42,8 @@ class AuthenticationControllerTest {
 
     @Test
     void loginReturnsTokenResponse() throws Exception {
-        when(authenticationService.login(any())).thenReturn(new LoginResponse("access-token", "Bearer", 900));
+        when(authenticationService.login(any()))
+                .thenReturn(new LoginResponse("access-token", "refresh-token", "Bearer", 900));
 
         mockMvc.perform(
                         post("/api/v1/auth/login")
@@ -54,8 +57,35 @@ class AuthenticationControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").value("access-token"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"))
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.expiresIn").value(900));
+    }
+
+    @Test
+    void refreshReturnsNewAccessToken() throws Exception {
+        when(authenticationService.refresh(any())).thenReturn(new RefreshTokenResponse("new-access-token", 900));
+
+        mockMvc.perform(
+                        post("/api/v1/auth/refresh")
+                                .contentType(APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                          "refreshToken": "refresh-token"
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("new-access-token"))
+                .andExpect(jsonPath("$.expiresIn").value(900));
+    }
+
+    @Test
+    void logoutReturnsNoContent() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout").principal(() -> "john@example.com"))
+                .andExpect(status().isNoContent());
+
+        verify(authenticationService).logout();
     }
 
     @Test

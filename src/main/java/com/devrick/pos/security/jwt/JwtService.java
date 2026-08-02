@@ -23,7 +23,6 @@ import org.springframework.util.StringUtils;
 public class JwtService {
 
     private static final String JWT_HEADER_JSON = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
-    private static final String JWT_TOKEN_TYPE = "access";
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
@@ -32,18 +31,26 @@ public class JwtService {
     private final ObjectMapper objectMapper;
 
     public String generateAccessToken(UserDetails userDetails) {
-        return generateAccessToken(userDetails.getUsername());
+        return generateToken(userDetails.getUsername(), TokenType.ACCESS, jwtProperties.getAccessTokenExpiration());
+    }
+
+    public String generateRefreshToken(UserDetails userDetails) {
+        return generateToken(userDetails.getUsername(), TokenType.REFRESH, jwtProperties.getRefreshTokenExpiration());
     }
 
     public String generateAccessToken(String subject) {
+        return generateToken(subject, TokenType.ACCESS, jwtProperties.getAccessTokenExpiration());
+    }
+
+    private String generateToken(String subject, TokenType tokenType, java.time.Duration expiration) {
         Instant issuedAt = clock.instant();
-        Instant expiresAt = issuedAt.plus(jwtProperties.getAccessTokenExpiration());
+        Instant expiresAt = issuedAt.plus(expiration);
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("sub", subject);
         claims.put("iss", jwtProperties.getIssuer());
         claims.put("iat", issuedAt.getEpochSecond());
         claims.put("exp", expiresAt.getEpochSecond());
-        claims.put("typ", JWT_TOKEN_TYPE);
+        claims.put("typ", tokenType.getClaimValue());
 
         String encodedHeader = base64UrlEncode(JWT_HEADER_JSON.getBytes(StandardCharsets.UTF_8));
         String encodedPayload = base64UrlEncode(writeValueAsBytes(claims));
@@ -64,8 +71,22 @@ public class JwtService {
             JwtToken tokenData = parseToken(token);
             return tokenData.subject().equals(userDetails.getUsername())
                     && tokenData.issuer().equals(jwtProperties.getIssuer())
-                    && JWT_TOKEN_TYPE.equals(tokenData.type())
-                    && tokenData.expiresAt().isAfter(clock.instant());
+                    && TokenType.ACCESS.getClaimValue().equals(tokenData.type())
+                    && tokenData.expiresAt().isAfter(clock.instant())
+                    && userDetails.isEnabled();
+        } catch (JwtValidationException exception) {
+            return false;
+        }
+    }
+
+    public boolean isRefreshTokenValid(String token, UserDetails userDetails) {
+        try {
+            JwtToken tokenData = parseToken(token);
+            return tokenData.subject().equals(userDetails.getUsername())
+                    && tokenData.issuer().equals(jwtProperties.getIssuer())
+                    && TokenType.REFRESH.getClaimValue().equals(tokenData.type())
+                    && tokenData.expiresAt().isAfter(clock.instant())
+                    && userDetails.isEnabled();
         } catch (JwtValidationException exception) {
             return false;
         }

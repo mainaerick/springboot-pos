@@ -13,3 +13,4 @@ app:
     issuer: pos-api
     secret: ${APP_JWT_SECRET:pos-development-secret-key-pos-development-secret-key}
     access-token-expiration: 15m
+    refresh-token-expiration: 7d

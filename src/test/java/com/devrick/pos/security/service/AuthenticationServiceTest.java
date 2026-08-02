@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import com.devrick.pos.security.dto.LoginRequest;
 import com.devrick.pos.security.dto.LoginResponse;
+import com.devrick.pos.security.dto.RefreshTokenRequest;
+import com.devrick.pos.security.dto.RefreshTokenResponse;
 import com.devrick.pos.security.jwt.JwtProperties;
 import com.devrick.pos.security.jwt.JwtService;
 import com.devrick.pos.user.dto.UserResponse;
@@ -30,6 +32,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetailsService;
 
 @ExtendWith(MockitoExtension.class)
 class AuthenticationServiceTest {
@@ -46,6 +49,9 @@ class AuthenticationServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private UserDetailsService userDetailsService;
+
     private JwtProperties jwtProperties;
     private AuthenticationService authenticationService;
 
@@ -55,8 +61,9 @@ class AuthenticationServiceTest {
         jwtProperties.setIssuer("pos-api");
         jwtProperties.setSecret("pos-test-secret-key-pos-test-secret-key");
         jwtProperties.setAccessTokenExpiration(Duration.ofMinutes(15));
-        authenticationService =
-                new AuthenticationService(authenticationManager, jwtService, jwtProperties, userRepository, userMapper);
+        jwtProperties.setRefreshTokenExpiration(Duration.ofDays(7));
+        authenticationService = new AuthenticationService(
+                authenticationManager, jwtService, jwtProperties, userRepository, userMapper, userDetailsService);
     }
 
     @Test
@@ -74,6 +81,7 @@ class AuthenticationServiceTest {
 
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
         when(jwtService.generateAccessToken(userDetails)).thenReturn("access-token");
+        when(jwtService.generateRefreshToken(userDetails)).thenReturn("refresh-token");
 
         LoginResponse response = authenticationService.login(new LoginRequest(" JOHN.DOE@EXAMPLE.COM ", "Password123"));
 
@@ -83,6 +91,7 @@ class AuthenticationServiceTest {
         assertEquals("john.doe@example.com", captor.getValue().getName());
         assertEquals("Password123", captor.getValue().getCredentials());
         assertEquals("access-token", response.accessToken());
+        assertEquals("refresh-token", response.refreshToken());
         assertEquals("Bearer", response.tokenType());
         assertEquals(900, response.expiresIn());
     }
@@ -121,5 +130,47 @@ class AuthenticationServiceTest {
 
         Principal principal = () -> "john.doe@example.com";
         assertEquals(expected, authenticationService.getCurrentUser(principal));
+    }
+
+    @Test
+    void refreshReturnsNewAccessToken() {
+        var userDetails = new org.springframework.security.core.userdetails.User(
+                "john.doe@example.com",
+                "encoded-password",
+                true,
+                true,
+                true,
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        when(jwtService.extractUsername("refresh-token")).thenReturn("john.doe@example.com");
+        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(userDetails);
+        when(jwtService.isRefreshTokenValid("refresh-token", userDetails)).thenReturn(true);
+        when(jwtService.generateAccessToken(userDetails)).thenReturn("new-access-token");
+
+        RefreshTokenResponse response = authenticationService.refresh(new RefreshTokenRequest("refresh-token"));
+
+        assertEquals("new-access-token", response.accessToken());
+        assertEquals(900, response.expiresIn());
+    }
+
+    @Test
+    void refreshRejectsInvalidRefreshToken() {
+        var userDetails = new org.springframework.security.core.userdetails.User(
+                "john.doe@example.com",
+                "encoded-password",
+                true,
+                true,
+                true,
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        when(jwtService.extractUsername("refresh-token")).thenReturn("john.doe@example.com");
+        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(userDetails);
+        when(jwtService.isRefreshTokenValid("refresh-token", userDetails)).thenReturn(false);
+
+        assertThrows(
+                BadCredentialsException.class,
+                () -> authenticationService.refresh(new RefreshTokenRequest("refresh-token")));
     }
 }

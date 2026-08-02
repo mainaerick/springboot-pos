@@ -44,6 +44,19 @@ class JwtServiceTest {
     }
 
     @Test
+    void generateRefreshTokenCreatesReadableToken() {
+        JwtService jwtService =
+                new JwtService(jwtProperties, fixedClock, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        String token = jwtService.generateRefreshToken(userDetails());
+
+        assertNotNull(token);
+        assertEquals(3, token.split("\\.").length);
+        assertEquals("john.doe@example.com", jwtService.extractUsername(token));
+        assertEquals(Instant.parse("2026-08-09T10:15:30Z"), jwtService.extractExpiration(token));
+    }
+
+    @Test
     void isTokenValidAcceptsMatchingUser() {
         JwtService jwtService =
                 new JwtService(jwtProperties, fixedClock, new com.fasterxml.jackson.databind.ObjectMapper());
@@ -51,6 +64,17 @@ class JwtServiceTest {
         String token = jwtService.generateAccessToken(userDetails());
 
         assertTrue(jwtService.isTokenValid(token, userDetails()));
+    }
+
+    @Test
+    void isRefreshTokenValidAcceptsMatchingUser() {
+        JwtService jwtService =
+                new JwtService(jwtProperties, fixedClock, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        String token = jwtService.generateRefreshToken(userDetails());
+
+        assertTrue(jwtService.isRefreshTokenValid(token, userDetails()));
+        assertFalse(jwtService.isTokenValid(token, userDetails()));
     }
 
     @Test
