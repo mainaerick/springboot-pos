@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.security.dto.LoginRequest;
 import com.devrick.pos.security.dto.LoginResponse;
 import com.devrick.pos.security.dto.RefreshTokenRequest;
@@ -112,6 +113,7 @@ class AuthenticationServiceTest {
         user.setLastName("Doe");
         user.setEmail("john.doe@example.com");
         user.setPassword("encoded-password");
+        user.setRole(Role.ADMIN);
         user.setEnabled(true);
         user.setCreatedAt(Instant.parse("2026-08-02T10:00:00Z"));
         user.setUpdatedAt(Instant.parse("2026-08-02T10:05:00Z"));
@@ -121,6 +123,7 @@ class AuthenticationServiceTest {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getEmail(),
+                user.getRole(),
                 user.isEnabled(),
                 user.getCreatedAt(),
                 user.getUpdatedAt());

@@ -57,7 +57,8 @@ class UserServiceImplTest {
     void createSucceedsAndNormalizesEmail() {
         UUID id = UUID.randomUUID();
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request = new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!");
+        CreateUserRequest request =
+                new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!", null);
 
         when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
         when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
@@ -78,17 +79,43 @@ class UserServiceImplTest {
         assertEquals("Doe", captor.getValue().getLastName());
         assertEquals("john.doe@example.com", captor.getValue().getEmail());
         assertEquals("encoded-password", captor.getValue().getPassword());
-        assertEquals(Role.ADMIN, captor.getValue().getRole());
+        assertEquals(Role.CASHIER, captor.getValue().getRole());
         assertNotNull(response.id());
         assertEquals(id, response.id());
         assertEquals("john.doe@example.com", response.email());
+        assertEquals(Role.CASHIER, response.role());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
     }
 
     @Test
+    void createAssignsExplicitRoleWhenProvided() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.parse("2026-07-31T10:15:30Z");
+        CreateUserRequest request =
+                new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", Role.MANAGER);
+
+        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            setField(user, "id", id);
+            setField(user, "createdAt", now);
+            setField(user, "updatedAt", now);
+            return user;
+        });
+
+        UserResponse response = userService.create(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertEquals(Role.MANAGER, captor.getValue().getRole());
+        assertEquals(Role.MANAGER, response.role());
+    }
+
+    @Test
     void createDuplicateEmailThrowsDuplicateEmailException() {
-        CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!");
+        CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", null);
 
         when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(true);
 
@@ -113,6 +140,7 @@ class UserServiceImplTest {
         assertEquals("Jane", response.firstName());
         assertEquals("Doe", response.lastName());
         assertEquals("jane.doe@example.com", response.email());
+        assertEquals(Role.ADMIN, response.role());
         assertEquals(true, response.enabled());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
@@ -153,7 +181,8 @@ class UserServiceImplTest {
         Instant createdAt = Instant.parse("2026-07-31T10:15:30Z");
         Instant updatedAt = Instant.parse("2026-07-31T11:15:30Z");
         User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, createdAt, createdAt);
-        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false);
+        UpdateUserRequest request =
+                new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false, Role.ACCOUNTANT);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
@@ -170,6 +199,7 @@ class UserServiceImplTest {
         assertEquals("Janet", response.firstName());
         assertEquals("Roe", response.lastName());
         assertEquals("janet.roe@example.com", response.email());
+        assertEquals(Role.ACCOUNTANT, response.role());
         assertFalse(response.enabled());
         assertEquals(createdAt, response.createdAt());
         assertEquals(updatedAt, response.updatedAt());
@@ -180,7 +210,7 @@ class UserServiceImplTest {
         UUID id = UUID.randomUUID();
         User user = buildUser(
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
-        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true, null);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(true);
@@ -190,6 +220,30 @@ class UserServiceImplTest {
 
         assertEquals("Email already exists: janet.roe@example.com", exception.getMessage());
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void updateKeepsExistingRoleWhenRoleOmitted() {
+        UUID id = UUID.randomUUID();
+        User user = buildUser(
+                id,
+                "Jane",
+                "Doe",
+                "jane.doe@example.com",
+                "Password123!",
+                true,
+                Instant.now(),
+                Instant.now(),
+                Role.ADMIN);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
+
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.update(id, request);
+
+        assertEquals(Role.ADMIN, response.role());
     }
 
     @Test
@@ -209,26 +263,28 @@ class UserServiceImplTest {
     @Test
     void mapperMapsCreateRequestAndResponseFields() {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request = new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!");
-        User user = buildUser(UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
+        CreateUserRequest request = new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!", null);
+        User user = buildUser(
+                UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now, Role.ADMIN);
 
         User mappedUser = userMapper.toEntity(request);
         User mappedUserForUpdate = userMapper.toEntity(request);
         UserResponse response = userMapper.toResponse(user);
-        UpdateUserRequest updateRequest = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false);
+        UpdateUserRequest updateRequest = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
         userMapper.updateEntity(updateRequest, mappedUserForUpdate);
 
         assertEquals("Jane", mappedUser.getFirstName());
         assertEquals("Jane", response.firstName());
         assertEquals("Doe", response.lastName());
         assertEquals("jane.doe@example.com", response.email());
+        assertEquals(Role.ADMIN, response.role());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
         assertEquals("Janet", mappedUserForUpdate.getFirstName());
         assertEquals("Roe", mappedUserForUpdate.getLastName());
         assertEquals("janet.roe@example.com", mappedUserForUpdate.getEmail());
         assertFalse(mappedUserForUpdate.isEnabled());
-        assertEquals(Role.ADMIN, mappedUser.getRole());
+        assertEquals(Role.CASHIER, mappedUser.getRole());
     }
 
     private static User buildUser(
@@ -240,12 +296,25 @@ class UserServiceImplTest {
             boolean enabled,
             Instant createdAt,
             Instant updatedAt) {
+        return buildUser(id, firstName, lastName, email, password, enabled, createdAt, updatedAt, Role.ADMIN);
+    }
+
+    private static User buildUser(
+            UUID id,
+            String firstName,
+            String lastName,
+            String email,
+            String password,
+            boolean enabled,
+            Instant createdAt,
+            Instant updatedAt,
+            Role role) {
         User user = newUserInstance();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEmail(email);
         user.setPassword(password);
-        user.setRole(Role.ADMIN);
+        user.setRole(role);
         user.setEnabled(enabled);
         setField(user, "id", id);
         setField(user, "createdAt", createdAt);

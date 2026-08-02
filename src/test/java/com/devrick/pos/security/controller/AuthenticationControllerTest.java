@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.GlobalExceptionHandler;
 import com.devrick.pos.security.dto.LoginResponse;
 import com.devrick.pos.security.dto.RefreshTokenResponse;
@@ -96,6 +97,7 @@ class AuthenticationControllerTest {
                         "John",
                         "Doe",
                         "john@example.com",
+                        Role.ADMIN,
                         true,
                         Instant.parse("2026-08-02T10:00:00Z"),
                         Instant.parse("2026-08-02T10:05:00Z")));

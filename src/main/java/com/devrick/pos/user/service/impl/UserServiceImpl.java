@@ -1,5 +1,6 @@
 package com.devrick.pos.user.service.impl;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
 import com.devrick.pos.user.dto.CreateUserRequest;
@@ -47,6 +48,7 @@ public class UserServiceImpl implements UserService {
         User user = userMapper.toEntity(request);
         user.setEmail(normalizedEmail);
         user.setPassword(passwordEncoder.encode(request.password()));
+        applyRoleIfPresent(user, request.role());
 
         User savedUser = userRepository.save(user);
         return userMapper.toResponse(savedUser);
@@ -78,6 +80,7 @@ public class UserServiceImpl implements UserService {
 
         userMapper.updateEntity(request, user);
         user.setEmail(normalizedEmail);
+        applyRoleIfPresent(user, request.role());
 
         User savedUser = userRepository.save(user);
         return userMapper.toResponse(savedUser);
@@ -98,5 +101,11 @@ public class UserServiceImpl implements UserService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void applyRoleIfPresent(User user, Role role) {
+        if (role != null) {
+            user.setRole(role);
+        }
     }
 }

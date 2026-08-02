@@ -4,16 +4,20 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.security.dto.LoginRequest;
+import com.devrick.pos.user.dto.CreateUserRequest;
+import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.entity.User;
 import com.devrick.pos.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,6 +78,52 @@ class AuthenticationSecurityIntegrationTest {
         mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(cashierTokens.accessToken())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+
+        String createdUserResponse = mockMvc.perform(post("/api/v1/users")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken()))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateUserRequest(
+                                "Alice", "Owner", "alice.owner@example.com", "Password123!", Role.MANAGER))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.role").value("MANAGER"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(StandardCharsets.UTF_8);
+
+        JsonNode createdUserBody = objectMapper.readTree(createdUserResponse);
+        UUID createdUserId = UUID.fromString(createdUserBody.get("id").asText());
+
+        mockMvc.perform(put("/api/v1/users/{id}", createdUserId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken()))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateUserRequest(
+                                "Alice", "Owner", "alice.owner@example.com", true, Role.ACCOUNTANT))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ACCOUNTANT"));
+
+        mockMvc.perform(post("/api/v1/users")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(cashierTokens.accessToken()))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateUserRequest(
+                                "Bob", "Cashier", "bob.cashier@example.com", "Password123!", Role.ADMIN))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(
+                        post("/api/v1/users")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken()))
+                                .contentType(APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                          "firstName": "Invalid",
+                          "lastName": "Role",
+                          "email": "invalid.role@example.com",
+                          "password": "Password123!",
+                          "role": "NOT_A_ROLE"
+                        }
+                        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
 
         String refreshResponse = mockMvc.perform(post("/api/v1/auth/refresh")
                         .contentType(APPLICATION_JSON)

@@ -1,5 +1,6 @@
 package com.devrick.pos.user.dto;
 
+import com.devrick.pos.common.enums.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -9,4 +10,5 @@ public record UpdateUserRequest(
         @NotBlank @Size(min = 2, max = 100) String firstName,
         @NotBlank @Size(min = 2, max = 100) String lastName,
         @NotBlank @Email @Size(max = 255) String email,
-        @NotNull Boolean enabled) {}
+        @NotNull Boolean enabled,
+        Role role) {}

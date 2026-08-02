@@ -1,5 +1,6 @@
 package com.devrick.pos.user.dto;
 
+import com.devrick.pos.common.enums.Role;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -8,6 +9,7 @@ public record UserResponse(
         String firstName,
         String lastName,
         String email,
+        Role role,
         boolean enabled,
         Instant createdAt,
         Instant updatedAt) {}
