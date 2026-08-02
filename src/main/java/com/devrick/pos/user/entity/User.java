@@ -1,8 +1,11 @@
 package com.devrick.pos.user.entity;
 
 import com.devrick.pos.common.entity.BaseEntity;
+import com.devrick.pos.common.enums.Role;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.EqualsAndHashCode;
@@ -33,6 +36,10 @@ public class User extends BaseEntity {
 
     @Column(name = "password", nullable = false, length = 255)
     private String password;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 50)
+    private Role role = Role.ADMIN;
 
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;

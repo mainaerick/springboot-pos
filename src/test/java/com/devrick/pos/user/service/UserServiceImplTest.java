@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
 import com.devrick.pos.user.dto.CreateUserRequest;
@@ -32,6 +33,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
@@ -39,13 +41,16 @@ class UserServiceImplTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     private final UserMapper userMapper = Mappers.getMapper(UserMapper.class);
 
     private UserServiceImpl userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, userMapper);
+        userService = new UserServiceImpl(userRepository, userMapper, passwordEncoder);
     }
 
     @Test
@@ -55,6 +60,7 @@ class UserServiceImplTest {
         CreateUserRequest request = new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!");
 
         when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             setField(user, "id", id);
@@ -71,7 +77,8 @@ class UserServiceImplTest {
         assertEquals("John", captor.getValue().getFirstName());
         assertEquals("Doe", captor.getValue().getLastName());
         assertEquals("john.doe@example.com", captor.getValue().getEmail());
-        assertEquals("Password123!", captor.getValue().getPassword());
+        assertEquals("encoded-password", captor.getValue().getPassword());
+        assertEquals(Role.ADMIN, captor.getValue().getRole());
         assertNotNull(response.id());
         assertEquals(id, response.id());
         assertEquals("john.doe@example.com", response.email());
@@ -221,6 +228,7 @@ class UserServiceImplTest {
         assertEquals("Roe", mappedUserForUpdate.getLastName());
         assertEquals("janet.roe@example.com", mappedUserForUpdate.getEmail());
         assertFalse(mappedUserForUpdate.isEnabled());
+        assertEquals(Role.ADMIN, mappedUser.getRole());
     }
 
     private static User buildUser(
@@ -237,6 +245,7 @@ class UserServiceImplTest {
         user.setLastName(lastName);
         user.setEmail(email);
         user.setPassword(password);
+        user.setRole(Role.ADMIN);
         user.setEnabled(enabled);
         setField(user, "id", id);
         setField(user, "createdAt", createdAt);
