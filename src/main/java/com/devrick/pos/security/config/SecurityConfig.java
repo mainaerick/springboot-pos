@@ -1,6 +1,7 @@
 package com.devrick.pos.security.config;
 
 import com.devrick.pos.exception.ErrorResponse;
+import com.devrick.pos.security.bootstrap.BootstrapAdminProperties;
 import com.devrick.pos.security.filter.JwtAuthenticationFilter;
 import com.devrick.pos.security.jwt.JwtProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,7 +31,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, BootstrapAdminProperties.class})
 public class SecurityConfig {
 
     @Bean
@@ -47,9 +48,15 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .authorizeHttpRequests(auth -> auth.requestMatchers("/api/v1/auth/login")
+                .authorizeHttpRequests(auth -> auth.requestMatchers(
+                                "/actuator/health",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/v3/api-docs.yaml")
                         .permitAll()
-                        .requestMatchers("/api/v1/auth/refresh")
+                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh")
                         .permitAll()
                         .anyRequest()
                         .authenticated())

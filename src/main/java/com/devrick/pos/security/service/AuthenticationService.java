@@ -55,13 +55,19 @@ public class AuthenticationService {
                 request.email().trim().toLowerCase(Locale.ROOT), request.password()));
 
         UserDetails principal = (UserDetails) authentication.getPrincipal();
+        String normalizedEmail = principal.getUsername().trim().toLowerCase(Locale.ROOT);
+        boolean mustChangePassword = userRepository
+                .findByEmailIgnoreCase(normalizedEmail)
+                .map(User::isMustChangePassword)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
         String accessToken = jwtService.generateAccessToken(principal);
         String refreshToken = jwtService.generateRefreshToken(principal);
         return new LoginResponse(
                 accessToken,
                 refreshToken,
                 TOKEN_TYPE,
-                jwtProperties.getAccessTokenExpiration().toSeconds());
+                jwtProperties.getAccessTokenExpiration().toSeconds(),
+                mustChangePassword);
     }
 
     @Transactional(readOnly = true)
@@ -95,7 +101,7 @@ public class AuthenticationService {
                 .orElseThrow(() -> new UsernameNotFoundException("Current authenticated user is missing"));
 
         User user = userRepository
-                .findByEmail(normalizedEmail)
+                .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
         return userMapper.toResponse(user);
     }

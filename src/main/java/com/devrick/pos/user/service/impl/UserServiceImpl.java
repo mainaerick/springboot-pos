@@ -3,6 +3,7 @@ package com.devrick.pos.user.service.impl;
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
+import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
@@ -41,16 +42,39 @@ public class UserServiceImpl implements UserService {
         String normalizedEmail = normalizeEmail(request.email());
         log.info("Creating user with email {}", normalizedEmail);
 
-        if (userRepository.existsByEmail(normalizedEmail)) {
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new DuplicateEmailException(normalizedEmail);
         }
 
-        User user = userMapper.toEntity(request);
-        user.setEmail(normalizedEmail);
-        user.setPassword(passwordEncoder.encode(request.password()));
-        applyRoleIfPresent(user, request.role());
+        User savedUser = userRepository.save(buildUser(
+                request.firstName(),
+                request.lastName(),
+                normalizedEmail,
+                passwordEncoder.encode(request.password()),
+                request.role(),
+                true,
+                false));
+        return userMapper.toResponse(savedUser);
+    }
 
-        User savedUser = userRepository.save(user);
+    @Override
+    @Transactional
+    public UserResponse createBootstrapAdmin(CreateSystemUserRequest request) {
+        String normalizedEmail = normalizeEmail(request.email());
+        log.info("Creating bootstrap admin with email {}", normalizedEmail);
+
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw new DuplicateEmailException(normalizedEmail);
+        }
+
+        User savedUser = userRepository.saveAndFlush(buildUser(
+                request.firstName(),
+                request.lastName(),
+                normalizedEmail,
+                passwordEncoder.encode(request.password()),
+                request.role(),
+                request.enabled(),
+                request.mustChangePassword()));
         return userMapper.toResponse(savedUser);
     }
 
@@ -74,7 +98,7 @@ public class UserServiceImpl implements UserService {
         String currentEmail = normalizeEmail(user.getEmail());
         log.info("Updating user {}", id);
 
-        if (!normalizedEmail.equals(currentEmail) && userRepository.existsByEmail(normalizedEmail)) {
+        if (!normalizedEmail.equals(currentEmail) && userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
             throw new DuplicateEmailException(normalizedEmail);
         }
 
@@ -101,6 +125,25 @@ public class UserServiceImpl implements UserService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private User buildUser(
+            String firstName,
+            String lastName,
+            String email,
+            String password,
+            Role role,
+            boolean enabled,
+            boolean mustChangePassword) {
+        User user = new User();
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
+        user.setEmail(email);
+        user.setPassword(password);
+        user.setEnabled(enabled);
+        user.setMustChangePassword(mustChangePassword);
+        applyRoleIfPresent(user, role);
+        return user;
     }
 
     private void applyRoleIfPresent(User user, Role role) {

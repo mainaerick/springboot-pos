@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
+import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
@@ -60,7 +61,7 @@ class UserServiceImplTest {
         CreateUserRequest request =
                 new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!", null);
 
-        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(false);
         when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
@@ -73,13 +74,14 @@ class UserServiceImplTest {
         UserResponse response = userService.create(request);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).existsByEmail("john.doe@example.com");
+        verify(userRepository).existsByEmailIgnoreCase("john.doe@example.com");
         verify(userRepository).save(captor.capture());
         assertEquals("John", captor.getValue().getFirstName());
         assertEquals("Doe", captor.getValue().getLastName());
         assertEquals("john.doe@example.com", captor.getValue().getEmail());
         assertEquals("encoded-password", captor.getValue().getPassword());
         assertEquals(Role.CASHIER, captor.getValue().getRole());
+        assertFalse(captor.getValue().isMustChangePassword());
         assertNotNull(response.id());
         assertEquals(id, response.id());
         assertEquals("john.doe@example.com", response.email());
@@ -95,7 +97,7 @@ class UserServiceImplTest {
         CreateUserRequest request =
                 new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", Role.MANAGER);
 
-        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(false);
         when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
@@ -117,7 +119,7 @@ class UserServiceImplTest {
     void createDuplicateEmailThrowsDuplicateEmailException() {
         CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", null);
 
-        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(true);
 
         DuplicateEmailException exception =
                 assertThrows(DuplicateEmailException.class, () -> userService.create(request));
@@ -185,7 +187,7 @@ class UserServiceImplTest {
                 new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false, Role.ACCOUNTANT);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
             setField(saved, "updatedAt", updatedAt);
@@ -194,7 +196,7 @@ class UserServiceImplTest {
 
         UserResponse response = userService.update(id, request);
 
-        verify(userRepository).existsByEmail("janet.roe@example.com");
+        verify(userRepository).existsByEmailIgnoreCase("janet.roe@example.com");
         assertEquals(id, response.id());
         assertEquals("Janet", response.firstName());
         assertEquals("Roe", response.lastName());
@@ -213,7 +215,7 @@ class UserServiceImplTest {
         UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true, null);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(true);
 
         DuplicateEmailException exception =
                 assertThrows(DuplicateEmailException.class, () -> userService.update(id, request));
@@ -238,7 +240,7 @@ class UserServiceImplTest {
         UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
 
         when(userRepository.findById(id)).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UserResponse response = userService.update(id, request);
@@ -285,6 +287,41 @@ class UserServiceImplTest {
         assertEquals("janet.roe@example.com", mappedUserForUpdate.getEmail());
         assertFalse(mappedUserForUpdate.isEnabled());
         assertEquals(Role.CASHIER, mappedUser.getRole());
+    }
+
+    @Test
+    void createBootstrapAdminEncodesPasswordAndSetsMustChangePassword() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.parse("2026-07-31T10:15:30Z");
+        CreateSystemUserRequest request = new CreateSystemUserRequest(
+                "System",
+                "Administrator",
+                " Admin@Example.com ",
+                "TemporaryStrongPassword123!",
+                Role.SUPER_ADMIN,
+                true,
+                true);
+
+        when(userRepository.existsByEmailIgnoreCase("admin@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("TemporaryStrongPassword123!")).thenReturn("encoded-temp-password");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            setField(user, "id", id);
+            setField(user, "createdAt", now);
+            setField(user, "updatedAt", now);
+            return user;
+        });
+
+        UserResponse response = userService.createBootstrapAdmin(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+        assertEquals("admin@example.com", captor.getValue().getEmail());
+        assertEquals("encoded-temp-password", captor.getValue().getPassword());
+        assertEquals(Role.SUPER_ADMIN, captor.getValue().getRole());
+        assertEquals(true, captor.getValue().isEnabled());
+        assertEquals(true, captor.getValue().isMustChangePassword());
+        assertEquals(id, response.id());
     }
 
     private static User buildUser(

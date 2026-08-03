@@ -1,5 +1,6 @@
 package com.devrick.pos.user.service;
 
+import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
@@ -10,6 +11,8 @@ import org.springframework.data.domain.Pageable;
 public interface UserService {
 
     UserResponse create(CreateUserRequest request);
+
+    UserResponse createBootstrapAdmin(CreateSystemUserRequest request);
 
     UserResponse getById(UUID id);
 

@@ -79,10 +79,14 @@ class AuthenticationServiceTest {
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         Authentication authentication =
                 UsernamePasswordAuthenticationToken.authenticated(userDetails, null, userDetails.getAuthorities());
+        User user = new User();
+        user.setEmail("john.doe@example.com");
+        user.setMustChangePassword(false);
 
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
         when(jwtService.generateAccessToken(userDetails)).thenReturn("access-token");
         when(jwtService.generateRefreshToken(userDetails)).thenReturn("refresh-token");
+        when(userRepository.findByEmailIgnoreCase("john.doe@example.com")).thenReturn(Optional.of(user));
 
         LoginResponse response = authenticationService.login(new LoginRequest(" JOHN.DOE@EXAMPLE.COM ", "Password123"));
 
@@ -95,6 +99,7 @@ class AuthenticationServiceTest {
         assertEquals("refresh-token", response.refreshToken());
         assertEquals("Bearer", response.tokenType());
         assertEquals(900, response.expiresIn());
+        assertEquals(false, response.mustChangePassword());
     }
 
     @Test
@@ -115,6 +120,7 @@ class AuthenticationServiceTest {
         user.setPassword("encoded-password");
         user.setRole(Role.ADMIN);
         user.setEnabled(true);
+        user.setMustChangePassword(false);
         user.setCreatedAt(Instant.parse("2026-08-02T10:00:00Z"));
         user.setUpdatedAt(Instant.parse("2026-08-02T10:05:00Z"));
 
@@ -128,7 +134,7 @@ class AuthenticationServiceTest {
                 user.getCreatedAt(),
                 user.getUpdatedAt());
 
-        when(userRepository.findByEmail("john.doe@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCase("john.doe@example.com")).thenReturn(Optional.of(user));
         when(userMapper.toResponse(user)).thenReturn(expected);
 
         Principal principal = () -> "john.doe@example.com";

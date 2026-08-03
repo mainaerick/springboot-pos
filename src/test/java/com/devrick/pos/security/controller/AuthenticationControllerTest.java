@@ -44,7 +44,7 @@ class AuthenticationControllerTest {
     @Test
     void loginReturnsTokenResponse() throws Exception {
         when(authenticationService.login(any()))
-                .thenReturn(new LoginResponse("access-token", "refresh-token", "Bearer", 900));
+                .thenReturn(new LoginResponse("access-token", "refresh-token", "Bearer", 900, false));
 
         mockMvc.perform(
                         post("/api/v1/auth/login")
@@ -60,7 +60,8 @@ class AuthenticationControllerTest {
                 .andExpect(jsonPath("$.accessToken").value("access-token"))
                 .andExpect(jsonPath("$.refreshToken").value("refresh-token"))
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresIn").value(900));
+                .andExpect(jsonPath("$.expiresIn").value(900))
+                .andExpect(jsonPath("$.mustChangePassword").value(false));
     }
 
     @Test

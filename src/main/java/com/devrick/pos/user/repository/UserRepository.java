@@ -1,5 +1,6 @@
 package com.devrick.pos.user.repository;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.user.entity.User;
 import java.util.Optional;
 import java.util.UUID;
@@ -10,4 +11,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    Optional<User> findByEmailIgnoreCase(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
+
+    boolean existsByRole(Role role);
 }

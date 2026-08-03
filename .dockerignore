@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+target
+*.log
+.env
+.env.*
+!.env.example
+README-local*
+docs/drafts
+*.swp
+*.swo
+*.tmp
+Thumbs.db
+.DS_Store
+ehthumbs.db

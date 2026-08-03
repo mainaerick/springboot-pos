@@ -37,6 +37,9 @@ public class User extends BaseEntity {
     @Column(name = "password", nullable = false, length = 255)
     private String password;
 
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = false;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)
     private Role role = Role.CASHIER;

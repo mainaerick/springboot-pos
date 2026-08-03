@@ -26,7 +26,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) {
         String normalizedEmail = username.trim().toLowerCase(Locale.ROOT);
         User user = userRepository
-                .findByEmail(normalizedEmail)
+                .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
 
         List<GrantedAuthority> authorities =

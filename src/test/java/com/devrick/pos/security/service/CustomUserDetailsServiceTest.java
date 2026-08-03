@@ -28,8 +28,9 @@ class CustomUserDetailsServiceTest {
         user.setPassword("encoded-password");
         user.setRole(Role.ADMIN);
         user.setEnabled(true);
+        user.setMustChangePassword(false);
 
-        org.mockito.Mockito.when(userRepository.findByEmail("john.doe@example.com"))
+        org.mockito.Mockito.when(userRepository.findByEmailIgnoreCase("john.doe@example.com"))
                 .thenReturn(Optional.of(user));
 
         CustomUserDetailsService service = new CustomUserDetailsService(userRepository);
@@ -44,7 +45,7 @@ class CustomUserDetailsServiceTest {
 
     @Test
     void loadUserByUsernameThrowsWhenMissing() {
-        org.mockito.Mockito.when(userRepository.findByEmail("missing@example.com"))
+        org.mockito.Mockito.when(userRepository.findByEmailIgnoreCase("missing@example.com"))
                 .thenReturn(Optional.empty());
 
         CustomUserDetailsService service = new CustomUserDetailsService(userRepository);

@@ -163,6 +163,20 @@ class AuthenticationSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void loginExposesMustChangePasswordFlagForTemporaryAccounts() throws Exception {
+        User bootstrapUser = createUser("bootstrap.admin@example.com", "Password123", Role.SUPER_ADMIN);
+        bootstrapUser.setMustChangePassword(true);
+        userRepository.saveAndFlush(bootstrapUser);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new LoginRequest("bootstrap.admin@example.com", "Password123"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mustChangePassword").value(true));
+    }
+
     private AuthTokens login(String email, String password) throws Exception {
         String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(APPLICATION_JSON)
@@ -172,6 +186,7 @@ class AuthenticationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.refreshToken").isNotEmpty())
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
                 .andExpect(jsonPath("$.expiresIn").value(900))
+                .andExpect(jsonPath("$.mustChangePassword").value(false))
                 .andReturn()
                 .getResponse()
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -194,6 +209,7 @@ class AuthenticationSecurityIntegrationTest {
         user.setPassword(passwordEncoder.encode(rawPassword));
         user.setRole(role);
         user.setEnabled(true);
+        user.setMustChangePassword(false);
         return user;
     }
 
