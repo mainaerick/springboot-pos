@@ -1,5 +1,6 @@
 package com.devrick.pos.security.jwt;
 
+import com.devrick.pos.security.principal.AuthenticatedUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -11,6 +12,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
@@ -31,18 +34,36 @@ public class JwtService {
     private final ObjectMapper objectMapper;
 
     public String generateAccessToken(UserDetails userDetails) {
-        return generateToken(userDetails.getUsername(), TokenType.ACCESS, jwtProperties.getAccessTokenExpiration());
+        return generateToken(
+                userDetails.getUsername(),
+                TokenType.ACCESS,
+                jwtProperties.getAccessTokenExpiration(),
+                extractTenantId(userDetails));
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        return generateToken(userDetails.getUsername(), TokenType.REFRESH, jwtProperties.getRefreshTokenExpiration());
+        return generateToken(
+                userDetails.getUsername(),
+                TokenType.REFRESH,
+                jwtProperties.getRefreshTokenExpiration(),
+                extractTenantId(userDetails));
     }
 
     public String generateAccessToken(String subject) {
-        return generateToken(subject, TokenType.ACCESS, jwtProperties.getAccessTokenExpiration());
+        return generateToken(subject, TokenType.ACCESS, jwtProperties.getAccessTokenExpiration(), Optional.empty());
     }
 
-    private String generateToken(String subject, TokenType tokenType, java.time.Duration expiration) {
+    public Optional<UUID> extractTenantId(String token) {
+        String tenantId = parseToken(token).tenantId();
+        if (!StringUtils.hasText(tenantId)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(UUID.fromString(tenantId));
+    }
+
+    private String generateToken(
+            String subject, TokenType tokenType, java.time.Duration expiration, Optional<UUID> tenantId) {
         Instant issuedAt = clock.instant();
         Instant expiresAt = issuedAt.plus(expiration);
         Map<String, Object> claims = new LinkedHashMap<>();
@@ -51,6 +72,10 @@ public class JwtService {
         claims.put("iat", issuedAt.getEpochSecond());
         claims.put("exp", expiresAt.getEpochSecond());
         claims.put("typ", tokenType.getClaimValue());
+        tenantId.ifPresent(value -> claims.put("tenantId", value.toString()));
+        if (claims.isEmpty()) {
+            throw new IllegalStateException("JWT claims cannot be empty");
+        }
 
         String encodedHeader = base64UrlEncode(JWT_HEADER_JSON.getBytes(StandardCharsets.UTF_8));
         String encodedPayload = base64UrlEncode(writeValueAsBytes(claims));
@@ -73,6 +98,7 @@ public class JwtService {
                     && tokenData.issuer().equals(jwtProperties.getIssuer())
                     && TokenType.ACCESS.getClaimValue().equals(tokenData.type())
                     && tokenData.expiresAt().isAfter(clock.instant())
+                    && tenantMatches(tokenData.tenantId(), userDetails)
                     && userDetails.isEnabled();
         } catch (JwtValidationException exception) {
             return false;
@@ -86,6 +112,7 @@ public class JwtService {
                     && tokenData.issuer().equals(jwtProperties.getIssuer())
                     && TokenType.REFRESH.getClaimValue().equals(tokenData.type())
                     && tokenData.expiresAt().isAfter(clock.instant())
+                    && tenantMatches(tokenData.tenantId(), userDetails)
                     && userDetails.isEnabled();
         } catch (JwtValidationException exception) {
             return false;
@@ -117,13 +144,28 @@ public class JwtService {
         long issuedAtEpochSecond = requiredLong(payloadNode, "iat");
         long expiresAtEpochSecond = requiredLong(payloadNode, "exp");
         String tokenType = requiredText(payloadNode, "typ");
+        String tenantId = optionalText(payloadNode, "tenantId");
 
         return new JwtToken(
                 subject,
                 issuer,
                 Instant.ofEpochSecond(issuedAtEpochSecond),
                 Instant.ofEpochSecond(expiresAtEpochSecond),
-                tokenType);
+                tokenType,
+                tenantId);
+    }
+
+    private boolean tenantMatches(String tokenTenantId, UserDetails userDetails) {
+        if (!StringUtils.hasText(tokenTenantId)) {
+            return true;
+        }
+
+        if (!(userDetails instanceof AuthenticatedUser authenticatedUser)) {
+            return false;
+        }
+
+        return authenticatedUser.tenantId() != null
+                && tokenTenantId.equals(authenticatedUser.tenantId().toString());
     }
 
     private void verifySignature(String signingInput, String encodedSignature) {
@@ -190,7 +232,23 @@ public class JwtService {
         return fieldNode.asLong();
     }
 
-    private record JwtToken(String subject, String issuer, Instant issuedAt, Instant expiresAt, String type) {}
+    private String optionalText(JsonNode node, String fieldName) {
+        JsonNode fieldNode = node.get(fieldName);
+        if (fieldNode == null || !StringUtils.hasText(fieldNode.asText())) {
+            return null;
+        }
+        return fieldNode.asText();
+    }
+
+    private Optional<UUID> extractTenantId(UserDetails userDetails) {
+        if (userDetails instanceof AuthenticatedUser authenticatedUser && authenticatedUser.tenantId() != null) {
+            return Optional.of(authenticatedUser.tenantId());
+        }
+        return Optional.empty();
+    }
+
+    private record JwtToken(
+            String subject, String issuer, Instant issuedAt, Instant expiresAt, String type, String tenantId) {}
 
     private static final class JwtValidationException extends RuntimeException {
 

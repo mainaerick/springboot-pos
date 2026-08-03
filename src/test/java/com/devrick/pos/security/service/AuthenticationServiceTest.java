@@ -13,6 +13,8 @@ import com.devrick.pos.security.dto.RefreshTokenRequest;
 import com.devrick.pos.security.dto.RefreshTokenResponse;
 import com.devrick.pos.security.jwt.JwtProperties;
 import com.devrick.pos.security.jwt.JwtService;
+import com.devrick.pos.security.principal.AuthenticatedUser;
+import com.devrick.pos.tenant.entity.TenantStatus;
 import com.devrick.pos.user.dto.UserResponse;
 import com.devrick.pos.user.entity.User;
 import com.devrick.pos.user.mapper.UserMapper;
@@ -22,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +40,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 
 @ExtendWith(MockitoExtension.class)
 class AuthenticationServiceTest {
+
+    private static final UUID TENANT_ID = UUID.fromString("55555555-5555-5555-5555-555555555555");
 
     @Mock
     private AuthenticationManager authenticationManager;
@@ -55,6 +60,7 @@ class AuthenticationServiceTest {
 
     private JwtProperties jwtProperties;
     private AuthenticationService authenticationService;
+    private AuthenticatedUser authenticatedUser;
 
     @BeforeEach
     void setUp() {
@@ -65,29 +71,18 @@ class AuthenticationServiceTest {
         jwtProperties.setRefreshTokenExpiration(Duration.ofDays(7));
         authenticationService = new AuthenticationService(
                 authenticationManager, jwtService, jwtProperties, userRepository, userMapper, userDetailsService);
+        authenticatedUser = principal(false);
     }
 
     @Test
     void loginReturnsAccessToken() {
-        var userDetails = new org.springframework.security.core.userdetails.User(
-                "john.doe@example.com",
-                "encoded-password",
-                true,
-                true,
-                true,
-                true,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
-        Authentication authentication =
-                UsernamePasswordAuthenticationToken.authenticated(userDetails, null, userDetails.getAuthorities());
-        User user = new User();
-        user.setEmail("john.doe@example.com");
-        user.setMustChangePassword(false);
+        Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
+                authenticatedUser, null, authenticatedUser.getAuthorities());
+        User user = buildUser(false);
 
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(jwtService.generateAccessToken(userDetails)).thenReturn("access-token");
-        when(jwtService.generateRefreshToken(userDetails)).thenReturn("refresh-token");
-        when(userRepository.findByEmailIgnoreCase("john.doe@example.com")).thenReturn(Optional.of(user));
-
+        when(jwtService.generateAccessToken(authenticatedUser)).thenReturn("access-token");
+        when(jwtService.generateRefreshToken(authenticatedUser)).thenReturn("refresh-token");
         LoginResponse response = authenticationService.login(new LoginRequest(" JOHN.DOE@EXAMPLE.COM ", "Password123"));
 
         ArgumentCaptor<UsernamePasswordAuthenticationToken> captor =
@@ -113,17 +108,7 @@ class AuthenticationServiceTest {
 
     @Test
     void getCurrentUserReturnsUserResponse() {
-        User user = new User();
-        user.setFirstName("John");
-        user.setLastName("Doe");
-        user.setEmail("john.doe@example.com");
-        user.setPassword("encoded-password");
-        user.setRole(Role.ADMIN);
-        user.setEnabled(true);
-        user.setMustChangePassword(false);
-        user.setCreatedAt(Instant.parse("2026-08-02T10:00:00Z"));
-        user.setUpdatedAt(Instant.parse("2026-08-02T10:05:00Z"));
-
+        User user = buildUser(false);
         UserResponse expected = new UserResponse(
                 user.getId(),
                 user.getFirstName(),
@@ -134,28 +119,22 @@ class AuthenticationServiceTest {
                 user.getCreatedAt(),
                 user.getUpdatedAt());
 
-        when(userRepository.findByEmailIgnoreCase("john.doe@example.com")).thenReturn(Optional.of(user));
+        Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
+                authenticatedUser, null, authenticatedUser.getAuthorities());
+
+        when(userRepository.findByIdAndTenantId(user.getId(), TENANT_ID)).thenReturn(Optional.of(user));
         when(userMapper.toResponse(user)).thenReturn(expected);
 
-        Principal principal = () -> "john.doe@example.com";
+        Principal principal = authentication;
         assertEquals(expected, authenticationService.getCurrentUser(principal));
     }
 
     @Test
     void refreshReturnsNewAccessToken() {
-        var userDetails = new org.springframework.security.core.userdetails.User(
-                "john.doe@example.com",
-                "encoded-password",
-                true,
-                true,
-                true,
-                true,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
-
         when(jwtService.extractUsername("refresh-token")).thenReturn("john.doe@example.com");
-        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(userDetails);
-        when(jwtService.isRefreshTokenValid("refresh-token", userDetails)).thenReturn(true);
-        when(jwtService.generateAccessToken(userDetails)).thenReturn("new-access-token");
+        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(authenticatedUser);
+        when(jwtService.isRefreshTokenValid("refresh-token", authenticatedUser)).thenReturn(true);
+        when(jwtService.generateAccessToken(authenticatedUser)).thenReturn("new-access-token");
 
         RefreshTokenResponse response = authenticationService.refresh(new RefreshTokenRequest("refresh-token"));
 
@@ -165,21 +144,41 @@ class AuthenticationServiceTest {
 
     @Test
     void refreshRejectsInvalidRefreshToken() {
-        var userDetails = new org.springframework.security.core.userdetails.User(
-                "john.doe@example.com",
-                "encoded-password",
-                true,
-                true,
-                true,
-                true,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
-
         when(jwtService.extractUsername("refresh-token")).thenReturn("john.doe@example.com");
-        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(userDetails);
-        when(jwtService.isRefreshTokenValid("refresh-token", userDetails)).thenReturn(false);
+        when(userDetailsService.loadUserByUsername("john.doe@example.com")).thenReturn(authenticatedUser);
+        when(jwtService.isRefreshTokenValid("refresh-token", authenticatedUser)).thenReturn(false);
 
         assertThrows(
                 BadCredentialsException.class,
                 () -> authenticationService.refresh(new RefreshTokenRequest("refresh-token")));
+    }
+
+    private AuthenticatedUser principal(boolean mustChangePassword) {
+        return new AuthenticatedUser(
+                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                TENANT_ID,
+                "Default Business",
+                "DEFAULT",
+                TenantStatus.ACTIVE,
+                "john.doe@example.com",
+                "encoded-password",
+                true,
+                mustChangePassword,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+    }
+
+    private User buildUser(boolean mustChangePassword) {
+        User user = new User();
+        user.setId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        user.setFirstName("John");
+        user.setLastName("Doe");
+        user.setEmail("john.doe@example.com");
+        user.setPassword("encoded-password");
+        user.setRole(Role.ADMIN);
+        user.setEnabled(true);
+        user.setMustChangePassword(mustChangePassword);
+        user.setCreatedAt(Instant.parse("2026-08-02T10:00:00Z"));
+        user.setUpdatedAt(Instant.parse("2026-08-02T10:05:00Z"));
+        return user;
     }
 }

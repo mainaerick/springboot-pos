@@ -1,5 +1,6 @@
 package com.devrick.pos.user.service;
 
+import com.devrick.pos.tenant.entity.Tenant;
 import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
@@ -12,7 +13,7 @@ public interface UserService {
 
     UserResponse create(CreateUserRequest request);
 
-    UserResponse createBootstrapAdmin(CreateSystemUserRequest request);
+    UserResponse createBootstrapAdmin(CreateSystemUserRequest request, Tenant tenant);
 
     UserResponse getById(UUID id);
 

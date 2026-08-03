@@ -1,9 +1,12 @@
 package com.devrick.pos.security.service;
 
+import com.devrick.pos.security.principal.AuthenticatedUser;
 import com.devrick.pos.user.entity.User;
 import com.devrick.pos.user.repository.UserRepository;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -29,9 +32,27 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
 
+        if (user.getTenant() == null) {
+            throw new DisabledException("User does not belong to a tenant");
+        }
+
+        if (!Objects.requireNonNull(user.getTenant().getStatus())
+                .equals(com.devrick.pos.tenant.entity.TenantStatus.ACTIVE)) {
+            throw new DisabledException("Tenant is not active");
+        }
+
         List<GrantedAuthority> authorities =
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
-        return new org.springframework.security.core.userdetails.User(
-                user.getEmail(), user.getPassword(), user.isEnabled(), true, true, true, authorities);
+        return new AuthenticatedUser(
+                user.getId(),
+                user.getTenant().getId(),
+                user.getTenant().getName(),
+                user.getTenant().getCode(),
+                user.getTenant().getStatus(),
+                user.getEmail(),
+                user.getPassword(),
+                user.isEnabled(),
+                user.isMustChangePassword(),
+                authorities);
     }
 }

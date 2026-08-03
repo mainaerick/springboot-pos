@@ -2,6 +2,9 @@ package com.devrick.pos.security.bootstrap;
 
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.security.role.repository.AppRoleRepository;
+import com.devrick.pos.tenant.entity.Tenant;
+import com.devrick.pos.tenant.entity.TenantStatus;
+import com.devrick.pos.tenant.repository.TenantRepository;
 import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
 import com.devrick.pos.user.entity.User;
@@ -31,6 +34,7 @@ public class BootstrapAdminService {
     private final AppRoleRepository appRoleRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final TenantRepository tenantRepository;
     private final Clock clock;
 
     public BootstrapAdminService(
@@ -38,11 +42,13 @@ public class BootstrapAdminService {
             AppRoleRepository appRoleRepository,
             UserRepository userRepository,
             UserService userService,
+            TenantRepository tenantRepository,
             Clock clock) {
         this.properties = properties;
         this.appRoleRepository = appRoleRepository;
         this.userRepository = userRepository;
         this.userService = userService;
+        this.tenantRepository = tenantRepository;
         this.clock = clock;
     }
 
@@ -56,6 +62,8 @@ public class BootstrapAdminService {
                 .findByName(ROLE_SEED_NAME)
                 .orElseThrow(() -> new BootstrapAdminConfigurationException(
                         "Bootstrap admin cannot start because the SUPER_ADMIN role seed is missing"));
+
+        Tenant tenant = resolveInitialTenant();
 
         if (userRepository.existsByRole(Role.SUPER_ADMIN)) {
             return;
@@ -80,7 +88,7 @@ public class BootstrapAdminService {
                 "System", "Administrator", normalizedEmail, properties.password(), Role.SUPER_ADMIN, true, true);
 
         try {
-            UserResponse createdUser = userService.createBootstrapAdmin(request);
+            UserResponse createdUser = userService.createBootstrapAdmin(request, tenant);
             if (createdUser == null) {
                 throw new BootstrapAdminConfigurationException("Bootstrap admin creation did not persist the user");
             }
@@ -109,6 +117,22 @@ public class BootstrapAdminService {
             }
             throw exception;
         }
+    }
+
+    private Tenant resolveInitialTenant() {
+        Tenant tenant = tenantRepository.findByCodeIgnoreCase("DEFAULT").orElseGet(() -> {
+            Tenant defaultTenant = new Tenant();
+            defaultTenant.setName("Default Business");
+            defaultTenant.setCode("DEFAULT");
+            defaultTenant.setStatus(TenantStatus.ACTIVE);
+            return tenantRepository.save(defaultTenant);
+        });
+
+        if (tenant.getStatus() != TenantStatus.ACTIVE) {
+            throw new BootstrapAdminConfigurationException("Default tenant exists but is not active");
+        }
+
+        return tenant;
     }
 
     private String normalizeEmail(String email) {

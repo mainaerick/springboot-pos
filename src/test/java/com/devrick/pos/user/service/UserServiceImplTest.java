@@ -3,6 +3,7 @@ package com.devrick.pos.user.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -12,6 +13,10 @@ import static org.mockito.Mockito.when;
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
+import com.devrick.pos.tenant.entity.Tenant;
+import com.devrick.pos.tenant.entity.TenantStatus;
+import com.devrick.pos.tenant.repository.TenantRepository;
+import com.devrick.pos.tenant.security.CurrentTenantProvider;
 import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
@@ -31,6 +36,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mapstruct.factory.Mappers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -39,19 +45,31 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
+    private static final UUID TENANT_ID = UUID.fromString("55555555-5555-5555-5555-555555555555");
+
     @Mock
     private UserRepository userRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private TenantRepository tenantRepository;
+
+    @Mock
+    private CurrentTenantProvider currentTenantProvider;
+
     private final UserMapper userMapper = Mappers.getMapper(UserMapper.class);
+    private final Tenant tenant = tenant(TENANT_ID, "Default Business", "DEFAULT", TenantStatus.ACTIVE);
 
     private UserServiceImpl userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, userMapper, passwordEncoder);
+        Mockito.lenient().when(currentTenantProvider.getCurrentTenantId()).thenReturn(TENANT_ID);
+        Mockito.lenient().when(tenantRepository.getReferenceById(TENANT_ID)).thenReturn(tenant);
+        userService = new UserServiceImpl(
+                userRepository, userMapper, passwordEncoder, tenantRepository, currentTenantProvider);
     }
 
     @Test
@@ -79,6 +97,7 @@ class UserServiceImplTest {
         assertEquals("John", captor.getValue().getFirstName());
         assertEquals("Doe", captor.getValue().getLastName());
         assertEquals("john.doe@example.com", captor.getValue().getEmail());
+        assertEquals(tenant, captor.getValue().getTenant());
         assertEquals("encoded-password", captor.getValue().getPassword());
         assertEquals(Role.CASHIER, captor.getValue().getRole());
         assertFalse(captor.getValue().isMustChangePassword());
@@ -134,7 +153,7 @@ class UserServiceImplTest {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
         User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
 
         UserResponse response = userService.getById(id);
 
@@ -152,7 +171,7 @@ class UserServiceImplTest {
     void getByIdThrowsWhenMissing() {
         UUID id = UUID.randomUUID();
 
-        when(userRepository.findById(id)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.empty());
 
         UserNotFoundException exception = assertThrows(UserNotFoundException.class, () -> userService.getById(id));
 
@@ -167,7 +186,7 @@ class UserServiceImplTest {
         User second = buildUser(
                 UUID.randomUUID(), "John", "Smith", "john.smith@example.com", "Password123!", false, now, now);
 
-        when(userRepository.findAll(PageRequest.of(0, 20)))
+        when(userRepository.findAllByTenantId(TENANT_ID, PageRequest.of(0, 20)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(first, second)));
 
         Page<UserResponse> responses = userService.getAll(PageRequest.of(0, 20));
@@ -186,7 +205,7 @@ class UserServiceImplTest {
         UpdateUserRequest request =
                 new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false, Role.ACCOUNTANT);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
@@ -214,7 +233,7 @@ class UserServiceImplTest {
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
         UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true, null);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(true);
 
         DuplicateEmailException exception =
@@ -239,7 +258,7 @@ class UserServiceImplTest {
                 Role.ADMIN);
         UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
         when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -254,7 +273,7 @@ class UserServiceImplTest {
         User user = buildUser(
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
 
         userService.disable(id);
 
@@ -287,6 +306,7 @@ class UserServiceImplTest {
         assertEquals("janet.roe@example.com", mappedUserForUpdate.getEmail());
         assertFalse(mappedUserForUpdate.isEnabled());
         assertEquals(Role.CASHIER, mappedUser.getRole());
+        assertNull(mappedUser.getTenant());
     }
 
     @Test
@@ -312,11 +332,12 @@ class UserServiceImplTest {
             return user;
         });
 
-        UserResponse response = userService.createBootstrapAdmin(request);
+        UserResponse response = userService.createBootstrapAdmin(request, tenant);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(captor.capture());
         assertEquals("admin@example.com", captor.getValue().getEmail());
+        assertEquals(tenant, captor.getValue().getTenant());
         assertEquals("encoded-temp-password", captor.getValue().getPassword());
         assertEquals(Role.SUPER_ADMIN, captor.getValue().getRole());
         assertEquals(true, captor.getValue().isEnabled());
@@ -350,6 +371,7 @@ class UserServiceImplTest {
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEmail(email);
+        user.setTenant(tenant(TENANT_ID, "Default Business", "DEFAULT", TenantStatus.ACTIVE));
         user.setPassword(password);
         user.setRole(role);
         user.setEnabled(enabled);
@@ -386,5 +408,14 @@ class UserServiceImplTest {
         }
 
         throw new IllegalArgumentException("Field not found: " + fieldName);
+    }
+
+    private static Tenant tenant(UUID id, String name, String code, TenantStatus status) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setName(name);
+        tenant.setCode(code);
+        tenant.setStatus(status);
+        return tenant;
     }
 }

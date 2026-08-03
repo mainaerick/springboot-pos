@@ -6,11 +6,11 @@ import com.devrick.pos.security.dto.RefreshTokenRequest;
 import com.devrick.pos.security.dto.RefreshTokenResponse;
 import com.devrick.pos.security.jwt.JwtProperties;
 import com.devrick.pos.security.jwt.JwtService;
+import com.devrick.pos.security.principal.AuthenticatedUser;
 import com.devrick.pos.user.dto.UserResponse;
 import com.devrick.pos.user.entity.User;
 import com.devrick.pos.user.mapper.UserMapper;
 import com.devrick.pos.user.repository.UserRepository;
-import java.security.Principal;
 import java.util.Locale;
 import java.util.Optional;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -56,10 +56,13 @@ public class AuthenticationService {
 
         UserDetails principal = (UserDetails) authentication.getPrincipal();
         String normalizedEmail = principal.getUsername().trim().toLowerCase(Locale.ROOT);
-        boolean mustChangePassword = userRepository
-                .findByEmailIgnoreCase(normalizedEmail)
-                .map(User::isMustChangePassword)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
+        boolean mustChangePassword = principal instanceof AuthenticatedUser authenticatedUser
+                ? authenticatedUser.mustChangePassword()
+                : userRepository
+                        .findByEmailIgnoreCase(normalizedEmail)
+                        .map(User::isMustChangePassword)
+                        .orElseThrow(
+                                () -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
         String accessToken = jwtService.generateAccessToken(principal);
         String refreshToken = jwtService.generateRefreshToken(principal);
         return new LoginResponse(
@@ -94,15 +97,24 @@ public class AuthenticationService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponse getCurrentUser(Principal principal) {
-        String normalizedEmail = Optional.ofNullable(principal)
-                .map(Principal::getName)
-                .map(value -> value.trim().toLowerCase(Locale.ROOT))
-                .orElseThrow(() -> new UsernameNotFoundException("Current authenticated user is missing"));
-
-        User user = userRepository
-                .findByEmailIgnoreCase(normalizedEmail)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + normalizedEmail));
+    public UserResponse getCurrentUser(java.security.Principal principal) {
+        User user = Optional.ofNullable(principal)
+                .map(value -> value instanceof Authentication authentication ? authentication : null)
+                .map(Authentication::getPrincipal)
+                .filter(AuthenticatedUser.class::isInstance)
+                .map(AuthenticatedUser.class::cast)
+                .flatMap(authenticatedUser ->
+                        userRepository.findByIdAndTenantId(authenticatedUser.userId(), authenticatedUser.tenantId()))
+                .orElseGet(() -> {
+                    String normalizedEmail = Optional.ofNullable(principal)
+                            .map(java.security.Principal::getName)
+                            .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                            .orElseThrow(() -> new UsernameNotFoundException("Current authenticated user is missing"));
+                    return userRepository
+                            .findByEmailIgnoreCase(normalizedEmail)
+                            .orElseThrow(() ->
+                                    new UsernameNotFoundException("User not found with email: " + normalizedEmail));
+                });
         return userMapper.toResponse(user);
     }
 }

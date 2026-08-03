@@ -10,6 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.security.dto.LoginRequest;
+import com.devrick.pos.tenant.entity.Tenant;
+import com.devrick.pos.tenant.entity.TenantStatus;
+import com.devrick.pos.tenant.repository.TenantRepository;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.entity.User;
@@ -35,6 +38,8 @@ import org.springframework.web.context.WebApplicationContext;
 @Transactional
 class AuthenticationSecurityIntegrationTest {
 
+    private static final String DEFAULT_TENANT_CODE = "DEFAULT";
+
     @Autowired
     private WebApplicationContext webApplicationContext;
 
@@ -43,6 +48,9 @@ class AuthenticationSecurityIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TenantRepository tenantRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -58,11 +66,19 @@ class AuthenticationSecurityIntegrationTest {
 
     @Test
     void loginAuthenticationAndProtectedEndpointsWorkTogether() throws Exception {
-        userRepository.saveAndFlush(createUser("john.doe@example.com", "Password123", Role.ADMIN));
-        userRepository.saveAndFlush(createUser("jane.cashier@example.com", "Password123", Role.CASHIER));
+        Tenant defaultTenant = defaultTenant();
+        Tenant otherTenant = tenantRepository.saveAndFlush(createTenant("Second Business", "SECOND"));
+
+        User admin = user(defaultTenant, "john.doe@example.com", "Password123", Role.ADMIN);
+        User cashier = user(defaultTenant, "jane.cashier@example.com", "Password123", Role.CASHIER);
+        User foreignAdmin = user(otherTenant, "mary.admin@example.com", "Password123", Role.ADMIN);
+        userRepository.saveAndFlush(admin);
+        userRepository.saveAndFlush(cashier);
+        userRepository.saveAndFlush(foreignAdmin);
 
         AuthTokens adminTokens = login("john.doe@example.com", "Password123");
         AuthTokens cashierTokens = login("jane.cashier@example.com", "Password123");
+        AuthTokens foreignTokens = login("mary.admin@example.com", "Password123");
 
         mockMvc.perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
                 .andExpect(status().isOk())
@@ -73,7 +89,13 @@ class AuthenticationSecurityIntegrationTest {
         mockMvc.perform(get("/api/v1/users")).andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[0].email").exists());
+
+        mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(foreignTokens.accessToken())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1));
 
         mockMvc.perform(get("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer(cashierTokens.accessToken())))
                 .andExpect(status().isForbidden())
@@ -100,6 +122,17 @@ class AuthenticationSecurityIntegrationTest {
                                 "Alice", "Owner", "alice.owner@example.com", true, Role.ACCOUNTANT))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("ACCOUNTANT"));
+
+        mockMvc.perform(get("/api/v1/users/{id}", foreignAdmin.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken())))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(put("/api/v1/users/{id}", foreignAdmin.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminTokens.accessToken()))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new UpdateUserRequest("Mary", "Admin", "mary.admin@example.com", true, Role.ADMIN))))
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/users")
                         .header(HttpHeaders.AUTHORIZATION, bearer(cashierTokens.accessToken()))
@@ -165,7 +198,8 @@ class AuthenticationSecurityIntegrationTest {
 
     @Test
     void loginExposesMustChangePasswordFlagForTemporaryAccounts() throws Exception {
-        User bootstrapUser = createUser("bootstrap.admin@example.com", "Password123", Role.SUPER_ADMIN);
+        Tenant defaultTenant = defaultTenant();
+        User bootstrapUser = user(defaultTenant, "bootstrap.admin@example.com", "Password123", Role.SUPER_ADMIN);
         bootstrapUser.setMustChangePassword(true);
         userRepository.saveAndFlush(bootstrapUser);
 
@@ -201,16 +235,31 @@ class AuthenticationSecurityIntegrationTest {
         return "Bearer " + token;
     }
 
-    private User createUser(String email, String rawPassword, Role role) {
+    private User user(Tenant tenant, String email, String rawPassword, Role role) {
         User user = new User();
         user.setFirstName("John");
         user.setLastName(role == Role.CASHIER ? "Cashier" : "Doe");
         user.setEmail(email);
+        user.setTenant(tenant);
         user.setPassword(passwordEncoder.encode(rawPassword));
         user.setRole(role);
         user.setEnabled(true);
         user.setMustChangePassword(false);
         return user;
+    }
+
+    private Tenant defaultTenant() {
+        return tenantRepository
+                .findByCodeIgnoreCase(DEFAULT_TENANT_CODE)
+                .orElseThrow(() -> new IllegalStateException("Default tenant is missing from the test database"));
+    }
+
+    private Tenant createTenant(String name, String code) {
+        Tenant tenant = new Tenant();
+        tenant.setName(name);
+        tenant.setCode(code);
+        tenant.setStatus(TenantStatus.ACTIVE);
+        return tenant;
     }
 
     private record AuthTokens(String accessToken, String refreshToken) {}

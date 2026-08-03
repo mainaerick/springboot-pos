@@ -11,6 +11,9 @@ import static org.mockito.Mockito.when;
 import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.security.role.entity.AppRole;
 import com.devrick.pos.security.role.repository.AppRoleRepository;
+import com.devrick.pos.tenant.entity.Tenant;
+import com.devrick.pos.tenant.entity.TenantStatus;
+import com.devrick.pos.tenant.repository.TenantRepository;
 import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
 import com.devrick.pos.user.entity.User;
@@ -32,6 +35,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 @ExtendWith(MockitoExtension.class)
 class BootstrapAdminServiceTest {
 
+    private static final UUID TENANT_ID = UUID.fromString("55555555-5555-5555-5555-555555555555");
+
     @Mock
     private AppRoleRepository appRoleRepository;
 
@@ -39,24 +44,34 @@ class BootstrapAdminServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private TenantRepository tenantRepository;
+
+    @Mock
     private UserService userService;
 
     private Clock clock;
+    private Tenant defaultTenant;
 
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(Instant.parse("2026-08-03T08:00:00Z"), ZoneOffset.UTC);
+        defaultTenant = tenant(TENANT_ID, "Default Business", "DEFAULT", TenantStatus.ACTIVE);
     }
 
     @Test
     void bootstrapDisabledSkipsEverything() {
         BootstrapAdminService service = new BootstrapAdminService(
-                new BootstrapAdminProperties(false, "", ""), appRoleRepository, userRepository, userService, clock);
+                new BootstrapAdminProperties(false, "", ""),
+                appRoleRepository,
+                userRepository,
+                userService,
+                tenantRepository,
+                clock);
 
         service.bootstrap();
 
         verify(appRoleRepository, never()).findByName(any());
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -75,18 +90,22 @@ class BootstrapAdminServiceTest {
                 Instant.parse("2026-08-03T08:00:00Z"));
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name())).thenReturn(Optional.of(superAdminRole));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.empty());
-        when(userService.createBootstrapAdmin(any())).thenReturn(createdUser);
+        when(userService.createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class)))
+                .thenReturn(createdUser);
 
         service.bootstrap();
 
         ArgumentCaptor<CreateSystemUserRequest> captor = ArgumentCaptor.forClass(CreateSystemUserRequest.class);
-        verify(userService).createBootstrapAdmin(captor.capture());
+        ArgumentCaptor<Tenant> tenantCaptor = ArgumentCaptor.forClass(Tenant.class);
+        verify(userService).createBootstrapAdmin(captor.capture(), tenantCaptor.capture());
         assertEquals("admin@example.com", captor.getValue().email());
         assertEquals(Role.SUPER_ADMIN, captor.getValue().role());
         assertEquals(true, captor.getValue().enabled());
         assertEquals(true, captor.getValue().mustChangePassword());
+        assertEquals(defaultTenant, tenantCaptor.getValue());
     }
 
     @Test
@@ -95,11 +114,12 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(true);
 
         service.bootstrap();
 
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -108,10 +128,11 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
 
         assertThrows(BootstrapAdminConfigurationException.class, service::bootstrap);
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -120,10 +141,11 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
 
         assertThrows(BootstrapAdminConfigurationException.class, service::bootstrap);
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -132,13 +154,14 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
 
         BootstrapAdminConfigurationException exception =
                 assertThrows(BootstrapAdminConfigurationException.class, service::bootstrap);
 
         assertEquals("Bootstrap admin password must be at least 12 characters long", exception.getMessage());
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -150,6 +173,7 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.of(existingUser));
 
@@ -159,7 +183,7 @@ class BootstrapAdminServiceTest {
         assertEquals(
                 "Bootstrap admin email is already assigned to an existing non-super-admin user",
                 exception.getMessage());
-        verify(userService, never()).createBootstrapAdmin(any());
+        verify(userService, never()).createBootstrapAdmin(any(), any());
     }
 
     @Test
@@ -168,14 +192,16 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.empty());
-        when(userService.createBootstrapAdmin(any())).thenReturn(createdResponse());
+        when(userService.createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class)))
+                .thenReturn(createdResponse());
 
         service.bootstrap();
 
         ArgumentCaptor<CreateSystemUserRequest> captor = ArgumentCaptor.forClass(CreateSystemUserRequest.class);
-        verify(userService).createBootstrapAdmin(captor.capture());
+        verify(userService).createBootstrapAdmin(captor.capture(), any(Tenant.class));
         assertEquals("admin@example.com", captor.getValue().email());
     }
 
@@ -185,14 +211,16 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false, true);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.empty(), Optional.empty());
-        when(userService.createBootstrapAdmin(any())).thenReturn(createdResponse());
+        when(userService.createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class)))
+                .thenReturn(createdResponse());
 
         service.bootstrap();
         service.bootstrap();
 
-        verify(userService).createBootstrapAdmin(any());
+        verify(userService).createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class));
     }
 
     @Test
@@ -201,9 +229,11 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false, true);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.empty());
-        when(userService.createBootstrapAdmin(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
+        when(userService.createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
 
         assertDoesNotThrow(service::bootstrap);
     }
@@ -214,14 +244,16 @@ class BootstrapAdminServiceTest {
 
         when(appRoleRepository.findByName(Role.SUPER_ADMIN.name()))
                 .thenReturn(Optional.of(appRole(Role.SUPER_ADMIN.name())));
+        when(tenantRepository.findByCodeIgnoreCase("DEFAULT")).thenReturn(Optional.of(defaultTenant));
         when(userRepository.existsByRole(Role.SUPER_ADMIN)).thenReturn(false);
         when(userRepository.findByEmailIgnoreCase("admin@example.com")).thenReturn(Optional.empty());
-        when(userService.createBootstrapAdmin(any())).thenReturn(createdResponse());
+        when(userService.createBootstrapAdmin(any(CreateSystemUserRequest.class), any(Tenant.class)))
+                .thenReturn(createdResponse());
 
         service.bootstrap();
 
         ArgumentCaptor<CreateSystemUserRequest> captor = ArgumentCaptor.forClass(CreateSystemUserRequest.class);
-        verify(userService).createBootstrapAdmin(captor.capture());
+        verify(userService).createBootstrapAdmin(captor.capture(), any(Tenant.class));
         assertEquals(true, captor.getValue().mustChangePassword());
     }
 
@@ -231,6 +263,7 @@ class BootstrapAdminServiceTest {
                 appRoleRepository,
                 userRepository,
                 userService,
+                tenantRepository,
                 clock);
     }
 
@@ -250,5 +283,14 @@ class BootstrapAdminServiceTest {
                 true,
                 Instant.parse("2026-08-03T08:00:00Z"),
                 Instant.parse("2026-08-03T08:00:00Z"));
+    }
+
+    private Tenant tenant(UUID id, String name, String code, TenantStatus status) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setName(name);
+        tenant.setCode(code);
+        tenant.setStatus(status);
+        return tenant;
     }
 }
