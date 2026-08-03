@@ -3,14 +3,21 @@ package com.devrick.pos.user.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.devrick.pos.common.enums.Role;
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
+import com.devrick.pos.tenant.entity.Tenant;
+import com.devrick.pos.tenant.entity.TenantStatus;
+import com.devrick.pos.tenant.repository.TenantRepository;
+import com.devrick.pos.tenant.security.CurrentTenantProvider;
+import com.devrick.pos.user.dto.CreateSystemUserRequest;
 import com.devrick.pos.user.dto.CreateUserRequest;
 import com.devrick.pos.user.dto.UpdateUserRequest;
 import com.devrick.pos.user.dto.UserResponse;
@@ -29,32 +36,51 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mapstruct.factory.Mappers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
+    private static final UUID TENANT_ID = UUID.fromString("55555555-5555-5555-5555-555555555555");
+
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private TenantRepository tenantRepository;
+
+    @Mock
+    private CurrentTenantProvider currentTenantProvider;
+
     private final UserMapper userMapper = Mappers.getMapper(UserMapper.class);
+    private final Tenant tenant = tenant(TENANT_ID, "Default Business", "DEFAULT", TenantStatus.ACTIVE);
 
     private UserServiceImpl userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userRepository, userMapper);
+        Mockito.lenient().when(currentTenantProvider.getCurrentTenantId()).thenReturn(TENANT_ID);
+        Mockito.lenient().when(tenantRepository.getReferenceById(TENANT_ID)).thenReturn(tenant);
+        userService = new UserServiceImpl(
+                userRepository, userMapper, passwordEncoder, tenantRepository, currentTenantProvider);
     }
 
     @Test
     void createSucceedsAndNormalizesEmail() {
         UUID id = UUID.randomUUID();
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request = new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!");
+        CreateUserRequest request =
+                new CreateUserRequest("John", "Doe", " John.Doe@Example.com ", "Password123!", null);
 
-        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             setField(user, "id", id);
@@ -66,24 +92,53 @@ class UserServiceImplTest {
         UserResponse response = userService.create(request);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).existsByEmail("john.doe@example.com");
+        verify(userRepository).existsByEmailIgnoreCase("john.doe@example.com");
         verify(userRepository).save(captor.capture());
         assertEquals("John", captor.getValue().getFirstName());
         assertEquals("Doe", captor.getValue().getLastName());
         assertEquals("john.doe@example.com", captor.getValue().getEmail());
-        assertEquals("Password123!", captor.getValue().getPassword());
+        assertEquals(tenant, captor.getValue().getTenant());
+        assertEquals("encoded-password", captor.getValue().getPassword());
+        assertEquals(Role.CASHIER, captor.getValue().getRole());
+        assertFalse(captor.getValue().isMustChangePassword());
         assertNotNull(response.id());
         assertEquals(id, response.id());
         assertEquals("john.doe@example.com", response.email());
+        assertEquals(Role.CASHIER, response.role());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
     }
 
     @Test
-    void createDuplicateEmailThrowsDuplicateEmailException() {
-        CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!");
+    void createAssignsExplicitRoleWhenProvided() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.parse("2026-07-31T10:15:30Z");
+        CreateUserRequest request =
+                new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", Role.MANAGER);
 
-        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("Password123!")).thenReturn("encoded-password");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            setField(user, "id", id);
+            setField(user, "createdAt", now);
+            setField(user, "updatedAt", now);
+            return user;
+        });
+
+        UserResponse response = userService.create(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertEquals(Role.MANAGER, captor.getValue().getRole());
+        assertEquals(Role.MANAGER, response.role());
+    }
+
+    @Test
+    void createDuplicateEmailThrowsDuplicateEmailException() {
+        CreateUserRequest request = new CreateUserRequest("John", "Doe", "john.doe@example.com", "Password123!", null);
+
+        when(userRepository.existsByEmailIgnoreCase("john.doe@example.com")).thenReturn(true);
 
         DuplicateEmailException exception =
                 assertThrows(DuplicateEmailException.class, () -> userService.create(request));
@@ -98,7 +153,7 @@ class UserServiceImplTest {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
         User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
 
         UserResponse response = userService.getById(id);
 
@@ -106,6 +161,7 @@ class UserServiceImplTest {
         assertEquals("Jane", response.firstName());
         assertEquals("Doe", response.lastName());
         assertEquals("jane.doe@example.com", response.email());
+        assertEquals(Role.ADMIN, response.role());
         assertEquals(true, response.enabled());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
@@ -115,7 +171,7 @@ class UserServiceImplTest {
     void getByIdThrowsWhenMissing() {
         UUID id = UUID.randomUUID();
 
-        when(userRepository.findById(id)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.empty());
 
         UserNotFoundException exception = assertThrows(UserNotFoundException.class, () -> userService.getById(id));
 
@@ -130,7 +186,7 @@ class UserServiceImplTest {
         User second = buildUser(
                 UUID.randomUUID(), "John", "Smith", "john.smith@example.com", "Password123!", false, now, now);
 
-        when(userRepository.findAll(PageRequest.of(0, 20)))
+        when(userRepository.findAllByTenantId(TENANT_ID, PageRequest.of(0, 20)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(first, second)));
 
         Page<UserResponse> responses = userService.getAll(PageRequest.of(0, 20));
@@ -146,10 +202,11 @@ class UserServiceImplTest {
         Instant createdAt = Instant.parse("2026-07-31T10:15:30Z");
         Instant updatedAt = Instant.parse("2026-07-31T11:15:30Z");
         User user = buildUser(id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, createdAt, createdAt);
-        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false);
+        UpdateUserRequest request =
+                new UpdateUserRequest("Janet", "Roe", " janet.roe@example.com ", false, Role.ACCOUNTANT);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(false);
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
             setField(saved, "updatedAt", updatedAt);
@@ -158,11 +215,12 @@ class UserServiceImplTest {
 
         UserResponse response = userService.update(id, request);
 
-        verify(userRepository).existsByEmail("janet.roe@example.com");
+        verify(userRepository).existsByEmailIgnoreCase("janet.roe@example.com");
         assertEquals(id, response.id());
         assertEquals("Janet", response.firstName());
         assertEquals("Roe", response.lastName());
         assertEquals("janet.roe@example.com", response.email());
+        assertEquals(Role.ACCOUNTANT, response.role());
         assertFalse(response.enabled());
         assertEquals(createdAt, response.createdAt());
         assertEquals(updatedAt, response.updatedAt());
@@ -173,10 +231,10 @@ class UserServiceImplTest {
         UUID id = UUID.randomUUID();
         User user = buildUser(
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
-        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", true, null);
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("janet.roe@example.com")).thenReturn(true);
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(true);
 
         DuplicateEmailException exception =
                 assertThrows(DuplicateEmailException.class, () -> userService.update(id, request));
@@ -186,12 +244,36 @@ class UserServiceImplTest {
     }
 
     @Test
+    void updateKeepsExistingRoleWhenRoleOmitted() {
+        UUID id = UUID.randomUUID();
+        User user = buildUser(
+                id,
+                "Jane",
+                "Doe",
+                "jane.doe@example.com",
+                "Password123!",
+                true,
+                Instant.now(),
+                Instant.now(),
+                Role.ADMIN);
+        UpdateUserRequest request = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
+
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailIgnoreCase("janet.roe@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.update(id, request);
+
+        assertEquals(Role.ADMIN, response.role());
+    }
+
+    @Test
     void disableSetsEnabledFalse() {
         UUID id = UUID.randomUUID();
         User user = buildUser(
                 id, "Jane", "Doe", "jane.doe@example.com", "Password123!", true, Instant.now(), Instant.now());
 
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndTenantId(id, TENANT_ID)).thenReturn(Optional.of(user));
 
         userService.disable(id);
 
@@ -202,25 +284,65 @@ class UserServiceImplTest {
     @Test
     void mapperMapsCreateRequestAndResponseFields() {
         Instant now = Instant.parse("2026-07-31T10:15:30Z");
-        CreateUserRequest request = new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!");
-        User user = buildUser(UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now);
+        CreateUserRequest request = new CreateUserRequest("Jane", "Doe", "jane.doe@example.com", "Password123!", null);
+        User user = buildUser(
+                UUID.randomUUID(), "Jane", "Doe", "jane.doe@example.com", "Password123!", true, now, now, Role.ADMIN);
 
         User mappedUser = userMapper.toEntity(request);
         User mappedUserForUpdate = userMapper.toEntity(request);
         UserResponse response = userMapper.toResponse(user);
-        UpdateUserRequest updateRequest = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false);
+        UpdateUserRequest updateRequest = new UpdateUserRequest("Janet", "Roe", "janet.roe@example.com", false, null);
         userMapper.updateEntity(updateRequest, mappedUserForUpdate);
 
         assertEquals("Jane", mappedUser.getFirstName());
         assertEquals("Jane", response.firstName());
         assertEquals("Doe", response.lastName());
         assertEquals("jane.doe@example.com", response.email());
+        assertEquals(Role.ADMIN, response.role());
         assertEquals(now, response.createdAt());
         assertEquals(now, response.updatedAt());
         assertEquals("Janet", mappedUserForUpdate.getFirstName());
         assertEquals("Roe", mappedUserForUpdate.getLastName());
         assertEquals("janet.roe@example.com", mappedUserForUpdate.getEmail());
         assertFalse(mappedUserForUpdate.isEnabled());
+        assertEquals(Role.CASHIER, mappedUser.getRole());
+        assertNull(mappedUser.getTenant());
+    }
+
+    @Test
+    void createBootstrapAdminEncodesPasswordAndSetsMustChangePassword() {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.parse("2026-07-31T10:15:30Z");
+        CreateSystemUserRequest request = new CreateSystemUserRequest(
+                "System",
+                "Administrator",
+                " Admin@Example.com ",
+                "TemporaryStrongPassword123!",
+                Role.SUPER_ADMIN,
+                true,
+                true);
+
+        when(userRepository.existsByEmailIgnoreCase("admin@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("TemporaryStrongPassword123!")).thenReturn("encoded-temp-password");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            setField(user, "id", id);
+            setField(user, "createdAt", now);
+            setField(user, "updatedAt", now);
+            return user;
+        });
+
+        UserResponse response = userService.createBootstrapAdmin(request, tenant);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+        assertEquals("admin@example.com", captor.getValue().getEmail());
+        assertEquals(tenant, captor.getValue().getTenant());
+        assertEquals("encoded-temp-password", captor.getValue().getPassword());
+        assertEquals(Role.SUPER_ADMIN, captor.getValue().getRole());
+        assertEquals(true, captor.getValue().isEnabled());
+        assertEquals(true, captor.getValue().isMustChangePassword());
+        assertEquals(id, response.id());
     }
 
     private static User buildUser(
@@ -232,11 +354,26 @@ class UserServiceImplTest {
             boolean enabled,
             Instant createdAt,
             Instant updatedAt) {
+        return buildUser(id, firstName, lastName, email, password, enabled, createdAt, updatedAt, Role.ADMIN);
+    }
+
+    private static User buildUser(
+            UUID id,
+            String firstName,
+            String lastName,
+            String email,
+            String password,
+            boolean enabled,
+            Instant createdAt,
+            Instant updatedAt,
+            Role role) {
         User user = newUserInstance();
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setEmail(email);
+        user.setTenant(tenant(TENANT_ID, "Default Business", "DEFAULT", TenantStatus.ACTIVE));
         user.setPassword(password);
+        user.setRole(role);
         user.setEnabled(enabled);
         setField(user, "id", id);
         setField(user, "createdAt", createdAt);
@@ -271,5 +408,14 @@ class UserServiceImplTest {
         }
 
         throw new IllegalArgumentException("Field not found: " + fieldName);
+    }
+
+    private static Tenant tenant(UUID id, String name, String code, TenantStatus status) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setName(name);
+        tenant.setCode(code);
+        tenant.setStatus(status);
+        return tenant;
     }
 }

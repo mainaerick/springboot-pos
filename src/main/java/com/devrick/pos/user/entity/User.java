@@ -1,9 +1,16 @@
 package com.devrick.pos.user.entity;
 
 import com.devrick.pos.common.entity.BaseEntity;
+import com.devrick.pos.common.enums.Role;
+import com.devrick.pos.tenant.entity.Tenant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -31,8 +38,20 @@ public class User extends BaseEntity {
     @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    @EqualsAndHashCode.Exclude
+    private Tenant tenant;
+
     @Column(name = "password", nullable = false, length = 255)
     private String password;
+
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 50)
+    private Role role = Role.CASHIER;
 
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;

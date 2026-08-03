@@ -18,7 +18,10 @@ public interface UserMapper {
     @Mapping(target = "updatedBy", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "tenant", ignore = true)
     @Mapping(target = "enabled", ignore = true)
+    @Mapping(target = "mustChangePassword", ignore = true)
+    @Mapping(target = "role", ignore = true)
     User toEntity(CreateUserRequest request);
 
     UserResponse toResponse(User user);
@@ -30,7 +33,10 @@ public interface UserMapper {
     @Mapping(target = "updatedBy", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "tenant", ignore = true)
     @Mapping(target = "password", ignore = true)
     @Mapping(target = "enabled", source = "enabled")
+    @Mapping(target = "mustChangePassword", ignore = true)
+    @Mapping(target = "role", ignore = true)
     void updateEntity(UpdateUserRequest request, @MappingTarget User user);
 }
