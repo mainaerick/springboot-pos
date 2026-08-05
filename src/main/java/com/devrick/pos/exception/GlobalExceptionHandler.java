@@ -2,6 +2,11 @@ package com.devrick.pos.exception;
 
 import com.devrick.pos.exception.user.DuplicateEmailException;
 import com.devrick.pos.exception.user.UserNotFoundException;
+import com.devrick.pos.exception.customer.CustomerNotFoundException;
+import com.devrick.pos.exception.customer.DuplicateCustomerCodeException;
+import com.devrick.pos.exception.branch.BranchNotFoundException;
+import com.devrick.pos.exception.branch.DuplicateBranchCodeException;
+import com.devrick.pos.exception.branch.DuplicateBranchNameException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -30,6 +35,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateEmail(
             DuplicateEmailException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(BranchNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleBranchNotFound(
+            BranchNotFoundException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateBranchCodeException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateBranchCode(
+            DuplicateBranchCodeException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateBranchNameException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateBranchName(
+            DuplicateBranchNameException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(CustomerNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCustomerNotFound(
+            CustomerNotFoundException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateCustomerCodeException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateCustomerCode(
+            DuplicateCustomerCodeException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
     }
 
