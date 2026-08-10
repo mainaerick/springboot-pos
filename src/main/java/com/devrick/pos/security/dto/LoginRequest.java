@@ -6,11 +6,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record LoginRequest(
-        @Schema(description = "User email address", example = "cashier@example.com") @NotBlank @Email @Size(max = 255)
+        @Schema(description = "User email address", example = "admin@example.com") @NotBlank @Email @Size(max = 255)
                 String email,
         @Schema(
                         description = "User password",
-                        example = "Password123!",
+                        example = "TemporaryStrongPassword123!",
                         format = "password",
                         accessMode = Schema.AccessMode.WRITE_ONLY)
                 @NotBlank

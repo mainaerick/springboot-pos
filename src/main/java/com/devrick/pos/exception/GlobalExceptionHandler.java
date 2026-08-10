@@ -7,6 +7,8 @@ import com.devrick.pos.exception.customer.DuplicateCustomerCodeException;
 import com.devrick.pos.exception.branch.BranchNotFoundException;
 import com.devrick.pos.exception.branch.DuplicateBranchCodeException;
 import com.devrick.pos.exception.branch.DuplicateBranchNameException;
+import com.devrick.pos.exception.supplier.DuplicateSupplierCodeException;
+import com.devrick.pos.exception.supplier.SupplierNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -65,6 +67,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateCustomerCodeException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateCustomerCode(
             DuplicateCustomerCodeException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(SupplierNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSupplierNotFound(
+            SupplierNotFoundException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateSupplierCodeException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateSupplierCode(
+            DuplicateSupplierCodeException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
     }
 
