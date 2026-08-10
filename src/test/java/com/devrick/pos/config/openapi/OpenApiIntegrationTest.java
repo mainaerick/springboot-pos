@@ -44,7 +44,10 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.bearerFormat")
                         .value("JWT"))
                 .andExpect(jsonPath("$.paths['/api/v1/auth/login']").exists())
-                .andExpect(jsonPath("$.paths['/api/v1/users']").exists());
+                .andExpect(jsonPath("$.paths['/api/v1/users']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/branches']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/customers']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/suppliers']").exists());
     }
 
     @Test
