@@ -20,6 +20,7 @@ public interface BranchMapper {
     @Mapping(target = "deleted", ignore = true)
     @Mapping(target = "tenant", ignore = true)
     @Mapping(target = "active", ignore = true)
+    @Mapping(target = "nameCi", ignore = true)
     Branch toEntity(CreateBranchRequest request);
 
     BranchResponse toResponse(Branch branch);
@@ -34,5 +35,6 @@ public interface BranchMapper {
     @Mapping(target = "tenant", ignore = true)
     @Mapping(target = "code", ignore = true)
     @Mapping(target = "active", ignore = true)
+    @Mapping(target = "nameCi", ignore = true)
     void updateEntity(UpdateBranchRequest request, @MappingTarget Branch branch);
 }

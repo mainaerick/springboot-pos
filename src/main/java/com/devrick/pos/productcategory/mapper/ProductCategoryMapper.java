@@ -1,15 +1,15 @@
-package com.devrick.pos.customer.mapper;
+package com.devrick.pos.productcategory.mapper;
 
-import com.devrick.pos.customer.dto.CreateCustomerRequest;
-import com.devrick.pos.customer.dto.CustomerResponse;
-import com.devrick.pos.customer.dto.UpdateCustomerRequest;
-import com.devrick.pos.customer.entity.Customer;
+import com.devrick.pos.productcategory.dto.CreateProductCategoryRequest;
+import com.devrick.pos.productcategory.dto.ProductCategoryResponse;
+import com.devrick.pos.productcategory.dto.UpdateProductCategoryRequest;
+import com.devrick.pos.productcategory.entity.ProductCategory;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
 @Mapper(componentModel = "spring")
-public interface CustomerMapper {
+public interface ProductCategoryMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
@@ -21,9 +21,9 @@ public interface CustomerMapper {
     @Mapping(target = "tenant", ignore = true)
     @Mapping(target = "active", ignore = true)
     @Mapping(target = "nameCi", ignore = true)
-    Customer toEntity(CreateCustomerRequest request);
+    ProductCategory toEntity(CreateProductCategoryRequest request);
 
-    CustomerResponse toResponse(Customer customer);
+    ProductCategoryResponse toResponse(ProductCategory productCategory);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
@@ -36,5 +36,5 @@ public interface CustomerMapper {
     @Mapping(target = "code", ignore = true)
     @Mapping(target = "active", ignore = true)
     @Mapping(target = "nameCi", ignore = true)
-    void updateEntity(UpdateCustomerRequest request, @MappingTarget Customer customer);
+    void updateEntity(UpdateProductCategoryRequest request, @MappingTarget ProductCategory productCategory);
 }
