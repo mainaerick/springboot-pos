@@ -7,6 +7,9 @@ import com.devrick.pos.exception.customer.DuplicateCustomerCodeException;
 import com.devrick.pos.exception.branch.BranchNotFoundException;
 import com.devrick.pos.exception.branch.DuplicateBranchCodeException;
 import com.devrick.pos.exception.branch.DuplicateBranchNameException;
+import com.devrick.pos.exception.productcategory.DuplicateProductCategoryCodeException;
+import com.devrick.pos.exception.productcategory.DuplicateProductCategoryNameException;
+import com.devrick.pos.exception.productcategory.ProductCategoryNotFoundException;
 import com.devrick.pos.exception.supplier.DuplicateSupplierCodeException;
 import com.devrick.pos.exception.supplier.SupplierNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -79,6 +82,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateSupplierCodeException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateSupplierCode(
             DuplicateSupplierCodeException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(ProductCategoryNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleProductCategoryNotFound(
+            ProductCategoryNotFoundException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateProductCategoryCodeException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateProductCategoryCode(
+            DuplicateProductCategoryCodeException exception, HttpServletRequest request) {
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(DuplicateProductCategoryNameException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateProductCategoryName(
+            DuplicateProductCategoryNameException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
     }
 
